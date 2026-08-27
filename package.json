@@ -1,0 +1,16 @@
+{
+  "name": "ofertaflow-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Bot de curadoria e publicacao de ofertas em grupos do WhatsApp via Z-API",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/index.js",
+    "dev": "node --env-file-if-exists=.env --watch src/index.js",
+    "test": "node --test",
+    "check": "node --check src/index.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

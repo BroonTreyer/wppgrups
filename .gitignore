@@ -1,0 +1,9 @@
+.env
+.claude-flow/
+work/
+outputs/
+data/*.json
+!data/.gitkeep
+coverage/
+node_modules/
+*.log
