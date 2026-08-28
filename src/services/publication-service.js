@@ -48,7 +48,7 @@ export class PublicationService {
   }
 
   isEligible({ destination, offer, nicheIds, publications, now }) {
-    if (!destination.active || !destination.nicheIds.some((id) => nicheIds.includes(id))) return false;
+    if (!destination.active || destination.available === false || !Array.isArray(destination.nicheIds) || !destination.nicheIds.some((id) => nicheIds.includes(id))) return false;
     if (discountPercentage(offer) < (destination.minDiscount ?? 0)) return false;
     const destinationPosts = publications.filter((item) => (item.destinationId ?? item.groupId) === destination.id && item.status === "sent");
     const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(now);

@@ -39,10 +39,13 @@ export class QueueService {
   async processNext() {
     if (this.processing || !this.isWithinPublishingWindow()) return { processed: false, reason: this.processing ? "busy" : "outside-window" };
     this.processing = true;
+    let selectedItem = null;
     try {
       const state = await this.store.read();
-      const item = state.queue.filter((entry) => entry.status === "queued").toSorted((a, b) => b.score - a.score || a.createdAt.localeCompare(b.createdAt))[0];
+      const now = this.clock();
+      const item = state.queue.filter((entry) => entry.status === "queued" && (!entry.nextAttemptAt || new Date(entry.nextAttemptAt) <= now)).toSorted((a, b) => b.score - a.score || a.createdAt.localeCompare(b.createdAt))[0];
       if (!item) return { processed: false, reason: "empty" };
+      selectedItem = item;
       await this.store.update((current) => {
         const selected = current.queue.find((entry) => entry.id === item.id);
         selected.status = "processing";
@@ -51,16 +54,28 @@ export class QueueService {
       const result = await this.publicationService.publish({ ...item.offer, nicheIds: item.nicheIds });
       await this.store.update((current) => {
         const selected = current.queue.find((entry) => entry.id === item.id);
-        selected.status = result.deliveredDestinations ? "published" : (selected.attempts >= 3 ? "failed" : "queued");
+        if (!result.matchedDestinations) {
+          selected.status = "queued";
+          selected.attempts = Math.max(0, selected.attempts - 1);
+          selected.nextAttemptAt = new Date(this.clock().getTime() + this.config.scheduler.retryDelayMinutes * 60_000).toISOString();
+          selected.lastDeferredReason = "Nenhum destino elegivel neste momento";
+        } else if (result.deliveredDestinations === result.matchedDestinations) {
+          selected.status = "published";
+          selected.nextAttemptAt = null;
+        } else {
+          selected.status = selected.attempts >= 3 ? (result.deliveredDestinations ? "partial" : "failed") : "queued";
+          selected.nextAttemptAt = selected.status === "queued" ? new Date(this.clock().getTime() + this.config.scheduler.retryDelayMinutes * 60_000).toISOString() : null;
+        }
         selected.lastAttemptAt = this.clock().toISOString();
       });
       return { processed: Boolean(result.deliveredDestinations), itemId: item.id, result };
     } catch (error) {
       await this.store.update((current) => {
-        const selected = current.queue.find((entry) => entry.status === "processing");
+        const selected = current.queue.find((entry) => entry.id === selectedItem?.id);
         if (selected) {
           selected.status = selected.attempts >= 3 ? "failed" : "queued";
           selected.lastError = error.message;
+          selected.nextAttemptAt = selected.status === "queued" ? new Date(this.clock().getTime() + this.config.scheduler.retryDelayMinutes * 60_000).toISOString() : null;
         }
       }).catch(() => {});
       return { processed: false, reason: "error", error: error.message };

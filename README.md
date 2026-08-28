@@ -71,3 +71,15 @@ O envio para canais permanece protegido por `ZAPI_CHANNEL_IMAGE_ENABLED=false`. 
 ## Próxima etapa
 
 Os marketplaces entram como adaptadores que convertem produtos para o formato comum de oferta. Credenciais reais e identificadores de afiliado devem ser configurados apenas no ambiente de execução.
+
+## Colocar os primeiros canais em operacao
+
+1. Mantenha `DRY_RUN=true`, configure as credenciais da Z-API e inicie o painel.
+2. Clique em **Sincronizar Z-API**. Canais novos são importados desativados por segurança.
+3. Confirme se **Achadinhos da Isa** e **Achados Pro** aparecem como sincronizados.
+4. Ajuste desconto mínimo, limite diário e intervalo de cada canal; salve-os ainda desativados.
+5. Adicione uma oferta de demonstração e processe a fila para validar legenda e classificação sem enviar mensagens.
+6. Homologue o envio de imagem para um canal de teste antes de definir `ZAPI_CHANNEL_IMAGE_ENABLED=true`.
+7. Somente depois da homologação, defina `DRY_RUN=false` e ative um canal por vez no painel.
+
+O endpoint administrativo `GET /api/readiness` mostra, sem revelar credenciais, se a Z-API está configurada, se imagens em canais estão liberadas e quais canais estão ativos.

@@ -5,14 +5,24 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>OfertaFlow</title>
   <style>
-    :root{font-family:Inter,system-ui,sans-serif;color:#e8edf2;background:#0b1118}body{max-width:1100px;margin:0 auto;padding:32px}header{display:flex;justify-content:space-between;gap:24px;align-items:center}h1{margin:0;color:#59e391}main{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:24px}.card{background:#131d28;border:1px solid #233244;border-radius:14px;padding:18px}.wide{grid-column:1/-1}input,button{border-radius:8px;border:1px solid #34485e;padding:10px;background:#0c151f;color:#fff}button{cursor:pointer;background:#167d4a;border-color:#20a663}button:hover{background:#1b9659}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px;border-bottom:1px solid #263747}.muted{color:#8da2b6}.ok{color:#59e391}.warn{color:#ffcb66}@media(max-width:760px){main{grid-template-columns:1fr}.wide{grid-column:auto}header{align-items:flex-start;flex-direction:column}}
+    :root{font-family:Inter,system-ui,sans-serif;color:#e8edf2;background:#0b1118}body{max-width:1100px;margin:0 auto;padding:32px}header{display:flex;justify-content:space-between;gap:24px;align-items:center}h1{margin:0;color:#59e391}main{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:24px}.card{background:#131d28;border:1px solid #233244;border-radius:14px;padding:18px}.wide{grid-column:1/-1}input,button{border-radius:8px;border:1px solid #34485e;padding:10px;background:#0c151f;color:#fff}input[type=number]{width:70px}button{cursor:pointer;background:#167d4a;border-color:#20a663}button:hover{background:#1b9659}button.secondary{background:#243447;border-color:#34485e}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px;border-bottom:1px solid #263747}.muted{color:#8da2b6}.ok{color:#59e391}.warn{color:#ffcb66}.bad{color:#ff7b7b}.status{padding:9px 12px;border-radius:8px;background:#0c151f;margin-top:10px}@media(max-width:760px){main{grid-template-columns:1fr}.wide{grid-column:auto}header{align-items:flex-start;flex-direction:column}.table-wrap{overflow-x:auto}}
   </style>
 </head>
 <body>
   <header><div><h1>OfertaFlow</h1><div class="muted">Painel operacional do bot</div></div><div><input id="token" type="password" placeholder="ADMIN_TOKEN"><button onclick="saveToken()">Salvar token</button></div></header>
   <main>
-    <section class="card"><h2>Sistema</h2><div id="health">Carregando...</div></section>
+    <section class="card"><h2>Sistema</h2><div id="health">Carregando...</div><div id="readiness"></div></section>
     <section class="card"><h2>Ações</h2><button onclick="sync()">Sincronizar Z-API</button> <button onclick="demo()">Adicionar oferta demo</button> <button onclick="processQueue()">Processar fila</button></section>
+    <section class="card wide"><h2>Nova oferta por link</h2>
+      <div><input id="productUrl" style="width:min(620px,90%)" placeholder="Cole um link afiliado da Amazon ou Mercado Livre"> <button onclick="previewProduct()">Importar</button></div>
+      <div id="offerForm" style="display:none;margin-top:14px">
+        <input id="externalId" type="hidden"><input id="marketplace" type="hidden"><input id="affiliateUrl" type="hidden">
+        <p><label>Título<br><input id="offerTitle" style="width:min(720px,90%)"></label></p>
+        <p><label>Preço atual<br><input id="currentPrice" type="number" min="0.01" step="0.01"></label> <label>Preço anterior<br><input id="originalPrice" type="number" min="0.01" step="0.01"></label></p>
+        <p><label>Imagem do produto<br><input id="imageUrl" style="width:min(720px,90%)" placeholder="https://..."></label></p>
+        <button onclick="enqueueOffer()">Adicionar à fila</button> <span class="warn">Revise preço e imagem antes de adicionar.</span>
+      </div>
+    </section>
     <section class="card wide"><h2>Destinos</h2><div id="destinations"></div></section>
     <section class="card wide"><h2>Fila de ofertas</h2><div id="queue"></div></section>
   </main>
@@ -25,14 +35,34 @@
     async function sync(){try{await api("/api/destinations/sync",{method:"POST"});refresh()}catch(e){alert(e.message)}}
     async function demo(){try{await api("/api/demo/enqueue",{method:"POST"});refresh()}catch(e){alert(e.message)}}
     async function processQueue(){try{await api("/api/queue/process",{method:"POST"});refresh()}catch(e){alert(e.message)}}
-    const table=(rows,cols)=>rows.length?`<table><thead><tr>${cols.map(c=>`<th>${c[0]}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${c[1](r)}</td>`).join("")}</tr>`).join("")}</tbody></table>`:"<span class=muted>Nenhum registro.</span>";
+    async function previewProduct(){
+      try{
+        const product=await api("/api/products/preview",{method:"POST",body:JSON.stringify({url:document.querySelector("#productUrl").value})});
+        for(const [id,value] of [["externalId",product.externalId],["marketplace",product.marketplace],["affiliateUrl",product.affiliateUrl],["offerTitle",product.title],["imageUrl",product.imageUrl]])document.querySelector(`#${id}`).value=value||"";
+        document.querySelector("#offerForm").style.display="block";
+      }catch(e){alert(e.message)}
+    }
+    async function enqueueOffer(){
+      const value=id=>document.querySelector(`#${id}`).value.trim();
+      const offer={externalId:value("externalId"),marketplace:value("marketplace"),affiliateUrl:value("affiliateUrl"),title:value("offerTitle"),imageUrl:value("imageUrl"),currentPrice:Number(value("currentPrice")),originalPrice:value("originalPrice")?Number(value("originalPrice")):null};
+      try{await api("/api/offers",{method:"POST",body:JSON.stringify(offer)});document.querySelector("#offerForm").style.display="none";document.querySelector("#productUrl").value="";document.querySelector("#currentPrice").value="";document.querySelector("#originalPrice").value="";await refresh();alert("Oferta adicionada à fila em modo seguro.")}catch(e){alert(e.message)}
+    }
+    const escapeHtml=value=>String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
+    const table=(rows,cols)=>rows.length?`<div class="table-wrap"><table><thead><tr>${cols.map(c=>`<th>${c[0]}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${c[1](r)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`:"<span class=muted>Nenhum registro.</span>";
+    async function configureDestination(button){
+      const row=button.closest("tr"),id=decodeURIComponent(button.dataset.id);
+      const active=row.querySelector("[data-field=active]").checked;
+      if(active&&!confirm("Ativar este destino para receber publicações? No modo real, mensagens poderão ser enviadas."))return;
+      try{await api(`/api/destinations/${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify({active,minDiscount:Number(row.querySelector("[data-field=minDiscount]").value),maxDailyPosts:Number(row.querySelector("[data-field=maxDailyPosts]").value),minMinutesBetweenPosts:Number(row.querySelector("[data-field=minMinutesBetweenPosts]").value)})});await refresh()}catch(e){alert(e.message)}
+    }
     async function refresh(){
       const h=await fetch("/health").then(r=>r.json());document.querySelector("#health").innerHTML=`<b class=ok>Online</b><br>Modo seguro: <b class=${h.dryRun?"warn":"ok"}>${h.dryRun?"ATIVO":"ENVIO REAL"}</b>`;
       if(!token.value)return;
       try{
-        const [d,q]=await Promise.all([api("/api/destinations"),api("/api/queue")]);
-        document.querySelector("#destinations").innerHTML=table(d,[["Nome",x=>x.name],["Tipo",x=>x.type],["Limite/dia",x=>x.maxDailyPosts],["Intervalo",x=>x.minMinutesBetweenPosts+" min"],["Ativo",x=>x.active?"Sim":"Não"]]);
-        document.querySelector("#queue").innerHTML=table(q,[["Produto",x=>x.offer.title],["Score",x=>x.score],["Status",x=>x.status],["Tentativas",x=>x.attempts]]);
+        const [d,q,r]=await Promise.all([api("/api/destinations"),api("/api/queue"),api("/api/readiness")]);
+        document.querySelector("#readiness").innerHTML=`<div class="status"><b class=${r.zapiConfigured?"ok":"warn"}>Z-API ${r.zapiConfigured?"configurada":"a configurar"}</b><br><span class="muted">${r.activeChannels} canal(is) ativo(s) · imagem em canal ${r.channelImageEnabled?"liberada":"bloqueada para homologação"}</span></div>`;
+        document.querySelector("#destinations").innerHTML=table(d,[["Nome",x=>`<b>${escapeHtml(x.name)}</b><br><small class=${x.available===false?"bad":"muted"}>${x.available===false?"Indisponível":"Sincronizado"}</small>`],["Tipo",x=>escapeHtml(x.type)],["Desconto mín.",x=>`<input data-field="minDiscount" type="number" min="0" max="100" value="${Number(x.minDiscount??0)}">%`],["Limite/dia",x=>`<input data-field="maxDailyPosts" type="number" min="1" max="500" value="${Number(x.maxDailyPosts??1)}">`],["Intervalo",x=>`<input data-field="minMinutesBetweenPosts" type="number" min="0" max="1440" value="${Number(x.minMinutesBetweenPosts??0)}"> min`],["Ativo",x=>`<input data-field="active" type="checkbox" ${x.active?"checked":""} ${x.available===false?"disabled":""}>`],["",x=>`<button class="secondary" data-id="${encodeURIComponent(x.id)}" onclick="configureDestination(this)">Salvar</button>`]]);
+        document.querySelector("#queue").innerHTML=table(q,[["Produto",x=>escapeHtml(x.offer.title)],["Score",x=>Number(x.score)],["Status",x=>escapeHtml(x.status)],["Tentativas",x=>Number(x.attempts)],["Próxima tentativa",x=>x.nextAttemptAt?escapeHtml(new Date(x.nextAttemptAt).toLocaleString("pt-BR")):"—"]]);
       }catch(e){document.querySelector("#destinations").innerHTML=`<span class=warn>${e.message}</span>`}
     }refresh();setInterval(refresh,15000);
   </script>

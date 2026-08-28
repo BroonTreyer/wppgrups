@@ -1,3 +1,5 @@
+import { DEFAULT_NICHES } from "../domain/niches.js";
+
 const defaultsFor = (type, config) => ({
   maxDailyPosts: type === "channel" ? config.limits.maxPostsPerChannelPerDay : config.limits.maxPostsPerGroupPerDay,
   minMinutesBetweenPosts: type === "channel" ? config.limits.channelMinutesBetweenPosts : config.limits.groupMinutesBetweenPosts
@@ -20,14 +22,22 @@ export class DestinationService {
     ];
 
     await this.store.update((state) => {
+      const remoteIds = new Set(remote.map((item) => item.id));
+      for (const destination of state.destinations) {
+        if (["group", "channel"].includes(destination.type) && !remoteIds.has(destination.id)) {
+          destination.available = false;
+          destination.active = false;
+        }
+      }
       for (const item of remote) {
         const existing = state.destinations.find((destination) => destination.id === item.id);
-        if (existing) Object.assign(existing, item, { lastSyncedAt: new Date().toISOString() });
+        if (existing) Object.assign(existing, item, { available: true, lastSyncedAt: new Date().toISOString() });
         else state.destinations.push({
           ...item,
           ...defaultsFor(item.type, this.config),
-          nicheIds: item.type === "channel" ? ["general"] : ["general"],
-          active: true,
+          nicheIds: ["general"],
+          active: false,
+          available: true,
           minDiscount: item.type === "channel" ? 5 : 10,
           lastSyncedAt: new Date().toISOString()
         });
@@ -44,9 +54,23 @@ export class DestinationService {
     return this.store.update((state) => {
       const destination = state.destinations.find((item) => item.id === id);
       if (!destination) throw new Error("Destino nao encontrado");
-      const allowed = ["active", "minDiscount", "maxDailyPosts", "minMinutesBetweenPosts"];
-      for (const field of allowed) if (patch[field] !== undefined) destination[field] = field === "active" ? Boolean(patch[field]) : Number(patch[field]);
-      if (patch.nicheIds) destination.nicheIds = [...new Set(patch.nicheIds)];
+      if (patch.active !== undefined) {
+        if (typeof patch.active !== "boolean") throw new Error("active deve ser booleano");
+        if (patch.active && destination.available === false) throw new Error("Sincronize novamente antes de ativar um destino indisponivel");
+        destination.active = patch.active;
+      }
+      for (const [field, min, max] of [["minDiscount", 0, 100], ["maxDailyPosts", 1, 500], ["minMinutesBetweenPosts", 0, 1440]]) {
+        if (patch[field] === undefined) continue;
+        const value = Number(patch[field]);
+        if (!Number.isInteger(value) || value < min || value > max) throw new Error(`${field} deve ser um inteiro entre ${min} e ${max}`);
+        destination[field] = value;
+      }
+      if (patch.nicheIds !== undefined) {
+        if (!Array.isArray(patch.nicheIds) || !patch.nicheIds.length) throw new Error("Selecione pelo menos um nicho");
+        const validIds = new Set(DEFAULT_NICHES.map((item) => item.id));
+        if (patch.nicheIds.some((item) => !validIds.has(item))) throw new Error("Um ou mais nichos sao invalidos");
+        destination.nicheIds = [...new Set(patch.nicheIds)];
+      }
       return destination;
     });
   }

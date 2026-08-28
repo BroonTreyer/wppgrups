@@ -5,5 +5,5 @@ outputs/
 data/*.json
 !data/.gitkeep
 coverage/
-node_modules/
 *.log
+node_modules/

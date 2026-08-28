@@ -11,6 +11,7 @@ export function loadConfig(env = process.env) {
     scheduler: {
       enabled: bool(env.SCHEDULER_ENABLED, true),
       intervalSeconds: int(env.SCHEDULER_INTERVAL_SECONDS, 60),
+      retryDelayMinutes: int(env.QUEUE_RETRY_DELAY_MINUTES, 5),
       startHour: int(env.PUBLISHING_START_HOUR, 8),
       endHour: int(env.PUBLISHING_END_HOUR, 23)
     },
@@ -35,4 +36,11 @@ export function loadConfig(env = process.env) {
 export function assertSafeConfig(config) {
   if (!config.dryRun && config.adminToken === "development-only-token") throw new Error("Defina ADMIN_TOKEN antes de ativar envios reais");
   if (!config.dryRun && config.zapi.webhookSecret === "development-webhook-secret") throw new Error("Defina ZAPI_WEBHOOK_SECRET antes de ativar envios reais");
+  if (!config.dryRun && (!config.zapi.instanceId || !config.zapi.instanceToken || !config.zapi.clientToken)) {
+    throw new Error("Defina todas as credenciais da Z-API antes de ativar envios reais");
+  }
+  if (config.scheduler.startHour < 0 || config.scheduler.startHour > 23 || config.scheduler.endHour < 1 || config.scheduler.endHour > 24) {
+    throw new Error("A janela de publicacao deve usar horas entre 0 e 24");
+  }
+  if (config.scheduler.intervalSeconds < 10) throw new Error("SCHEDULER_INTERVAL_SECONDS deve ser pelo menos 10");
 }
