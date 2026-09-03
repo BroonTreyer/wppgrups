@@ -5,19 +5,33 @@ import { DestinationService } from "./services/destination-service.js";
 import { PublicationService } from "./services/publication-service.js";
 import { QueueService } from "./services/queue-service.js";
 import { ProductLinkService } from "./services/product-link-service.js";
+import { IngestionService } from "./services/ingestion-service.js";
+import { AffiliateLinkService } from "./services/affiliate-link-service.js";
+import { PriceGuard } from "./services/price-guard.js";
+import { RetentionService } from "./services/retention-service.js";
+import { OperationService } from "./services/operation-service.js";
+import { MercadoLivreSource } from "./sources/mercado-livre.js";
 import { startScheduler } from "./services/scheduler.js";
 import { createApp } from "./http/server.js";
 
 const config = loadConfig();
 assertSafeConfig(config);
 const store = new JsonStore(config.dataFile);
+await store.cleanupTemporaryFiles();
 const zapi = new ZApiClient(config.zapi);
 const destinationService = new DestinationService({ store, zapi, config });
 const publicationService = new PublicationService({ store, zapi, config });
-const queueService = new QueueService({ store, publicationService, config });
+const sources = [new MercadoLivreSource()];
+const affiliateLinkService = new AffiliateLinkService({ store, config });
+const priceGuard = new PriceGuard({ sources, config });
+const queueService = new QueueService({ store, publicationService, priceGuard, config });
 const productLinkService = new ProductLinkService();
-const stopScheduler = startScheduler({ queueService, config });
-const server = createApp({ config, destinationService, publicationService, queueService, productLinkService });
+const ingestionService = new IngestionService({ store, queueService, affiliateLinkService, sources, config });
+const retentionService = new RetentionService({ store, config });
+const operationService = new OperationService({ store, config });
+await operationService.restoreWindow();
+const stopScheduler = startScheduler({ queueService, ingestionService, retentionService, operationService, config });
+const server = createApp({ config, destinationService, publicationService, queueService, productLinkService, ingestionService, affiliateLinkService, operationService });
 
 server.listen(config.port, () => console.log(`OfertaFlow ativo em ${config.appBaseUrl} (dry-run: ${config.dryRun})`));
 for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => {

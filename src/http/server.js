@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { DEFAULT_NICHES } from "../domain/niches.js";
+import { ML_CATEGORIES } from "../sources/mercado-livre.js";
 import { SAMPLE_OFFER } from "../mock/sample-offer.js";
 
 async function jsonBody(request) {
@@ -24,7 +25,7 @@ function send(response, status, body) {
   response.end(JSON.stringify(body, null, 2));
 }
 
-export function createApp({ config, destinationService, publicationService, queueService, productLinkService }) {
+export function createApp({ config, destinationService, publicationService, queueService, productLinkService, ingestionService, affiliateLinkService, operationService }) {
   return createServer(async (request, response) => {
     const url = new URL(request.url, config.appBaseUrl);
     try {
@@ -44,8 +45,12 @@ export function createApp({ config, destinationService, publicationService, queu
       if (request.headers.authorization !== `Bearer ${config.adminToken}`) return send(response, 401, { error: "Nao autorizado" });
       if (request.method === "GET" && url.pathname === "/api/readiness") {
         const destinations = await destinationService.list();
+        const affiliate = await affiliateLinkService.status();
+        const alerts = await ingestionService.alerts();
         return send(response, 200, {
-          readyForRealSending: !config.dryRun && Boolean(config.zapi.instanceId && config.zapi.instanceToken && config.zapi.clientToken),
+          readyForRealSending: !config.dryRun && Boolean(config.zapi.instanceId && config.zapi.instanceToken && config.zapi.clientToken) && affiliate.mode !== "none",
+          affiliate,
+          alerts: alerts.slice(-10).toReversed(),
           dryRun: config.dryRun,
           zapiConfigured: Boolean(config.zapi.instanceId && config.zapi.instanceToken && config.zapi.clientToken),
           channelImageEnabled: config.zapi.channelImageEnabled,
@@ -53,7 +58,34 @@ export function createApp({ config, destinationService, publicationService, queu
           channels: destinations.filter((item) => item.type === "channel").map(({ id, name, active, available, nicheIds, minDiscount, maxDailyPosts, minMinutesBetweenPosts }) => ({ id, name, active, available, nicheIds, minDiscount, maxDailyPosts, minMinutesBetweenPosts }))
         });
       }
+      if (request.method === "GET" && url.pathname === "/api/affiliate/pending") {
+        await affiliateLinkService.touchExtension();
+        return send(response, 200, { pending: await affiliateLinkService.pending(url.searchParams.get("limit") ?? 5) });
+      }
+      if (request.method === "POST" && url.pathname === "/api/affiliate/link") {
+        await affiliateLinkService.touchExtension();
+        return send(response, 200, await affiliateLinkService.resolve(await jsonBody(request)));
+      }
+      if (request.method === "POST" && url.pathname === "/api/affiliate/retry") return send(response, 200, await affiliateLinkService.retryFailed());
+      if (request.method === "GET" && url.pathname === "/api/affiliate/status") return send(response, 200, await affiliateLinkService.status());
+      if (request.method === "GET" && url.pathname === "/api/operation") return send(response, 200, await operationService.status());
+      if (request.method === "POST" && url.pathname === "/api/operation") {
+        const body = await jsonBody(request);
+        await operationService.setRunning(body.running);
+        if (body.running) await ingestionService.run().catch(() => ({}));
+        return send(response, 200, await operationService.status());
+      }
+      if (request.method === "POST" && url.pathname === "/api/operation/window") {
+        return send(response, 200, await operationService.setWindow(await jsonBody(request)));
+      }
+      if (request.method === "POST" && url.pathname === "/api/operation/daily-limit") {
+        return send(response, 200, await operationService.setDailyLimit((await jsonBody(request)).maxDailyPosts));
+      }
       if (request.method === "GET" && url.pathname === "/api/niches") return send(response, 200, DEFAULT_NICHES);
+      if (request.method === "GET" && url.pathname === "/api/sources") return send(response, 200, { sources: await ingestionService.list(), categories: ML_CATEGORIES });
+      if (request.method === "POST" && url.pathname === "/api/sources/run") return send(response, 200, await ingestionService.run(await jsonBody(request)));
+      const sourceMatch = url.pathname.match(/^\/api\/sources\/(.+)$/);
+      if (request.method === "PATCH" && sourceMatch) return send(response, 200, await ingestionService.configure(decodeURIComponent(sourceMatch[1]), await jsonBody(request)));
       if (request.method === "GET" && url.pathname === "/api/destinations") return send(response, 200, await destinationService.list());
       if (request.method === "POST" && url.pathname === "/api/destinations/sync") return send(response, 200, await destinationService.sync());
       if (request.method === "POST" && url.pathname === "/api/destinations/test") return send(response, 201, await destinationService.addTestDestination(await jsonBody(request)));

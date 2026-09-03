@@ -59,7 +59,7 @@ export class DestinationService {
         if (patch.active && destination.available === false) throw new Error("Sincronize novamente antes de ativar um destino indisponivel");
         destination.active = patch.active;
       }
-      for (const [field, min, max] of [["minDiscount", 0, 100], ["maxDailyPosts", 1, 500], ["minMinutesBetweenPosts", 0, 1440]]) {
+      for (const [field, min, max] of [["minDiscount", 0, 100], ["maxDailyPosts", 1, 500], ["minMinutesBetweenPosts", 0, 1440], ["maxPrice", 0, 1000000], ["minSold", 0, 1000000]]) {
         if (patch[field] === undefined) continue;
         const value = Number(patch[field]);
         if (!Number.isInteger(value) || value < min || value > max) throw new Error(`${field} deve ser um inteiro entre ${min} e ${max}`);

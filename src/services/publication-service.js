@@ -1,7 +1,9 @@
-import { discountPercentage, offerFingerprint, validateOffer } from "../domain/offer.js";
+import { discountPercentage, offerFingerprint, productKey, validateOffer } from "../domain/offer.js";
 import { inferNiches } from "../domain/niches.js";
 import { formatOfferCaption } from "../domain/message.js";
+import { isAttributedLink } from "../domain/affiliate.js";
 
+const days = (value) => value * 24 * 60 * 60 * 1000;
 const hours = (value) => value * 60 * 60 * 1000;
 const minutes = (value) => value * 60 * 1000;
 
@@ -15,14 +17,23 @@ export class PublicationService {
 
   async publish(input) {
     const offer = validateOffer(input);
+    if (!this.config.allowUntaggedLinks && !isAttributedLink(offer.affiliateUrl)) {
+      throw new Error("Oferta sem link de afiliado atribuido: publicacao bloqueada");
+    }
     const now = this.clock();
     const nicheIds = input.nicheIds?.length ? input.nicheIds : inferNiches(offer);
     const state = await this.store.read();
-    const destinations = state.destinations.filter((destination) => this.isEligible({ destination, offer, nicheIds, publications: state.publications, now }));
-    const caption = formatOfferCaption(offer, now);
+    const evaluated = state.destinations.map((destination) => ({ destination, reason: this.blockReason({ destination, offer, nicheIds, publications: state.publications, now }) }));
+    const destinations = evaluated.filter((item) => item.reason === null).map((item) => item.destination);
+    const blocked = evaluated
+      .filter((item) => item.reason !== null && item.destination.active && item.destination.available !== false)
+      .map((item) => ({ destinationId: item.destination.id, name: item.destination.name || item.destination.id, reason: item.reason }));
+    let caption = formatOfferCaption(offer, now, nicheIds);
     const results = [];
     for (const destination of destinations) {
       try {
+        const foco = (destination.nicheIds ?? []).filter((id) => nicheIds.includes(id));
+        caption = formatOfferCaption(offer, now, foco.length ? foco : nicheIds);
         if (destination.type === "channel" && !this.config.dryRun && !this.config.zapi.channelImageEnabled) {
           throw new Error("Envio de imagem para canal ainda nao homologado");
         }
@@ -38,26 +49,44 @@ export class PublicationService {
       current.offers.push({ ...offer, nicheIds, fingerprint: offerFingerprint(offer) });
       for (const result of results) {
         current.publications.push({
-          id: crypto.randomUUID(), offerFingerprint: offerFingerprint(offer), destinationId: result.destinationId,
+          id: crypto.randomUUID(), offerFingerprint: offerFingerprint(offer), productKey: productKey(offer), destinationId: result.destinationId,
           status: result.status, deliveryId: result.delivery?.messageId ?? result.delivery?.id ?? null,
           error: result.error ?? null, createdAt: now.toISOString()
         });
       }
     });
-    return { offer, nicheIds, matchedDestinations: destinations.length, deliveredDestinations: results.filter((item) => item.status === "sent").length, caption, results };
+    return { offer, nicheIds, matchedDestinations: destinations.length, deliveredDestinations: results.filter((item) => item.status === "sent").length, caption, results, blocked };
   }
 
-  isEligible({ destination, offer, nicheIds, publications, now }) {
-    if (!destination.active || destination.available === false || !Array.isArray(destination.nicheIds) || !destination.nicheIds.some((id) => nicheIds.includes(id))) return false;
-    if (discountPercentage(offer) < (destination.minDiscount ?? 0)) return false;
+  isEligible(params) {
+    return this.blockReason(params) === null;
+  }
+
+  blockReason({ destination, offer, nicheIds, publications, now }) {
+    if (!destination.active) return "destino desativado";
+    if (destination.available === false) return "destino indisponivel na Z-API";
+    if (!Array.isArray(destination.nicheIds) || !destination.nicheIds.some((id) => nicheIds.includes(id))) {
+      return `nicho nao combina (destino aceita ${(destination.nicheIds ?? []).join(", ")})`;
+    }
+    const discount = discountPercentage(offer);
+    if (discount < (destination.minDiscount ?? 0)) return `desconto de ${discount}% abaixo do minimo do destino (${destination.minDiscount}%)`;
+    if (destination.maxPrice && offer.currentPrice > destination.maxPrice) return `R$ ${offer.currentPrice} passa do teto de R$ ${destination.maxPrice} deste destino`;
+    if (destination.minSold && (offer.soldCount ?? 0) < destination.minSold) return `produto com pouca procura para este destino (${offer.soldCount ?? 0} vendidos)`;
     const destinationPosts = publications.filter((item) => (item.destinationId ?? item.groupId) === destination.id && item.status === "sent");
     const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(now);
     const dailyCount = destinationPosts.filter((item) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date(item.createdAt)) === today).length;
-    if (dailyCount >= destination.maxDailyPosts) return false;
+    if (dailyCount >= destination.maxDailyPosts) return `limite diario atingido (${dailyCount}/${destination.maxDailyPosts})`;
     const lastPost = destinationPosts.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-    if (lastPost && now - new Date(lastPost.createdAt) < minutes(destination.minMinutesBetweenPosts)) return false;
-    const fingerprint = offerFingerprint(offer);
-    return !destinationPosts.some((item) => item.offerFingerprint === fingerprint && now - new Date(item.createdAt) < hours(this.config.limits.deduplicationHours));
+    if (lastPost && now - new Date(lastPost.createdAt) < minutes(destination.minMinutesBetweenPosts)) {
+      const releaseAt = new Date(new Date(lastPost.createdAt).getTime() + minutes(destination.minMinutesBetweenPosts));
+      return `aguardando o intervalo de ${destination.minMinutesBetweenPosts} min: liberado as ${releaseAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}`;
+    }
+    const key = productKey(offer);
+    const cooldown = days(this.config.limits.republishCooldownDays);
+    const publishedKey = (item) => item.productKey ?? item.offerFingerprint?.split(":").slice(0, 2).join(":");
+    const repeated = destinationPosts.find((item) => publishedKey(item) === key && now - new Date(item.createdAt) < cooldown);
+    if (repeated) return `produto ja publicado aqui em ${new Date(repeated.createdAt).toLocaleDateString("pt-BR")}`;
+    return null;
   }
 
   async recordDeliveryEvent(event) {

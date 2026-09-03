@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <style>
+    body{font-family:system-ui,sans-serif;background:#0b1118;color:#e8edf2;width:330px;margin:0;padding:16px}
+    h1{font-size:15px;margin:0 0 4px;color:#59e391}
+    p.sub{margin:0 0 14px;color:#8da2b6;font-size:12px}
+    label{display:block;font-size:12px;color:#8da2b6;margin:10px 0 4px}
+    input{width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid #34485e;background:#0c151f;color:#fff;font-size:13px}
+    button{margin-top:12px;width:100%;padding:10px;border-radius:8px;border:1px solid #20a663;background:#167d4a;color:#fff;font-size:14px;cursor:pointer}
+    button.secondary{background:#243447;border-color:#34485e;margin-top:8px}
+    .status{margin-top:12px;padding:10px;border-radius:8px;background:#0c151f;font-size:12px;line-height:1.6}
+    .ok{color:#59e391}.bad{color:#ff7b7b}.warn{color:#ffcb66}
+  </style>
+</head>
+<body>
+  <h1>OfertaFlow</h1>
+  <p class="sub">Gera os links de afiliado no seu Chrome logado.</p>
+
+  <label>Endereço do OfertaFlow</label>
+  <input id="server" placeholder="http://localhost:3000">
+
+  <label>ADMIN_TOKEN</label>
+  <input id="token" type="password" placeholder="cole o token do painel">
+
+  <label>Página do gerador de links</label>
+  <input id="builderUrl" placeholder="https://www.mercadolivre.com.br/afiliados/linkbuilder">
+
+  <button id="save">Salvar</button>
+  <button id="run" class="secondary">Gerar links pendentes agora</button>
+
+  <div class="status" id="status">Carregando…</div>
+  <script src="popup.js"></script>
+</body>
+</html>

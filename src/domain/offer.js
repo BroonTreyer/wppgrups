@@ -16,6 +16,10 @@ export function validateOffer(input) {
     try { url = new URL(String(input[field])); } catch { throw new Error(`${field} deve ser uma URL valida`); }
     if (!["http:", "https:"].includes(url.protocol)) throw new Error(`${field} deve usar http ou https`);
   }
+  if (input.expiresAt !== undefined && input.expiresAt !== null && input.expiresAt !== "") {
+    const parsed = new Date(input.expiresAt);
+    if (Number.isNaN(parsed.getTime())) throw new Error("expiresAt deve ser uma data valida");
+  }
   return { ...input, externalId: String(input.externalId), marketplace: String(input.marketplace).trim(), title: String(input.title).trim(), currentPrice, originalPrice, rating, reviewCount, capturedAt: input.capturedAt ?? new Date().toISOString() };
 }
 
@@ -23,4 +27,10 @@ export function discountPercentage(offer) {
   return !offer.originalPrice || offer.originalPrice <= offer.currentPrice ? 0 : Math.round((1 - offer.currentPrice / offer.originalPrice) * 100);
 }
 
-export const offerFingerprint = (offer) => `${offer.marketplace}:${offer.externalId}:${offer.currentPrice.toFixed(2)}`;
+export function minutesUntilExpiry(offer, now = new Date()) {
+  if (!offer?.expiresAt) return null;
+  return Math.round((new Date(offer.expiresAt) - now) / 60000);
+}
+
+export const productKey = (offer) => `${offer.marketplace}:${offer.externalId}`;
+export const offerFingerprint = (offer) => `${productKey(offer)}:${offer.currentPrice.toFixed(2)}`;

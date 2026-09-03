@@ -5,66 +5,302 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>OfertaFlow</title>
   <style>
-    :root{font-family:Inter,system-ui,sans-serif;color:#e8edf2;background:#0b1118}body{max-width:1100px;margin:0 auto;padding:32px}header{display:flex;justify-content:space-between;gap:24px;align-items:center}h1{margin:0;color:#59e391}main{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:24px}.card{background:#131d28;border:1px solid #233244;border-radius:14px;padding:18px}.wide{grid-column:1/-1}input,button{border-radius:8px;border:1px solid #34485e;padding:10px;background:#0c151f;color:#fff}input[type=number]{width:70px}button{cursor:pointer;background:#167d4a;border-color:#20a663}button:hover{background:#1b9659}button.secondary{background:#243447;border-color:#34485e}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px;border-bottom:1px solid #263747}.muted{color:#8da2b6}.ok{color:#59e391}.warn{color:#ffcb66}.bad{color:#ff7b7b}.status{padding:9px 12px;border-radius:8px;background:#0c151f;margin-top:10px}@media(max-width:760px){main{grid-template-columns:1fr}.wide{grid-column:auto}header{align-items:flex-start;flex-direction:column}.table-wrap{overflow-x:auto}}
+    :root{font-family:Inter,system-ui,sans-serif;color:#e8edf2;background:#0b1118}
+    body{max-width:1180px;margin:0 auto;padding:28px}
+    header{display:flex;justify-content:space-between;gap:24px;align-items:center;flex-wrap:wrap}
+    h1{margin:0;color:#59e391;font-size:26px}
+    h2{margin:0 0 12px;font-size:17px}
+    main{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:22px}
+    .card{background:#131d28;border:1px solid #233244;border-radius:14px;padding:18px;min-width:0}
+    .wide{grid-column:1/-1}
+    input,button,select{border-radius:8px;border:1px solid #34485e;padding:9px;background:#0c151f;color:#fff;font-size:14px}
+    input[type=number]{width:74px}
+    button{cursor:pointer;background:#167d4a;border-color:#20a663}
+    button:hover{background:#1b9659}
+    button.secondary{background:#243447;border-color:#34485e}
+    button.danger{background:#8c2f2f;border-color:#b64444}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    .power{font-size:19px;font-weight:600;padding:16px 28px;border-radius:12px;width:100%}
+    .metrics{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0}
+    .metric{background:#0c151f;border:1px solid #233244;border-radius:10px;padding:10px 14px;min-width:112px}
+    .metric b{display:block;font-size:21px;line-height:1.3}
+    table{width:100%;border-collapse:collapse;min-width:760px}
+    th,td{text-align:left;padding:8px;border-bottom:1px solid #263747;vertical-align:top}
+    th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#8da2b6;font-weight:600}
+    .table-wrap{overflow-x:auto;max-width:100%}
+    .muted{color:#8da2b6}.ok{color:#59e391}.warn{color:#ffcb66}.bad{color:#ff7b7b}
+    .status{padding:9px 12px;border-radius:8px;background:#0c151f;margin-top:8px}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    label small{display:block;color:#8da2b6;font-size:12px;margin-bottom:3px}
+    @media(max-width:900px){main{grid-template-columns:1fr}.wide{grid-column:auto}header{align-items:flex-start;flex-direction:column}}
   </style>
 </head>
 <body>
-  <header><div><h1>OfertaFlow</h1><div class="muted">Painel operacional do bot</div></div><div><input id="token" type="password" placeholder="ADMIN_TOKEN"><button onclick="saveToken()">Salvar token</button></div></header>
+  <header>
+    <div><h1>OfertaFlow</h1><div class="muted">Painel operacional do bot</div></div>
+    <div class="row"><input id="token" type="password" placeholder="ADMIN_TOKEN"><button onclick="saveToken()">Salvar token</button></div>
+  </header>
   <main>
+    <section class="card wide">
+      <h2>Operação</h2>
+      <button id="power" class="power" onclick="togglePower()">Carregando...</button>
+      <div id="opStatus" class="metrics"></div>
+      <div class="row">
+        <label><small>Posts por dia em cada destino ativo</small><input id="dailyLimit" type="number" min="1" max="500" value="12"></label>
+        <button class="secondary" onclick="applyDailyLimit()">Aplicar a todos</button>
+        <label><small>Publicar das</small><input id="windowStart" type="number" min="0" max="23" value="8"></label>
+        <label><small>até as</small><input id="windowEnd" type="number" min="1" max="24" value="23"></label>
+        <button class="secondary" onclick="applyWindow()">Salvar janela</button>
+        <button class="secondary" onclick="runSources()">Buscar ofertas agora</button>
+        <button class="secondary" onclick="processQueue()">Publicar próxima agora</button>
+        <button class="secondary" onclick="sync()">Sincronizar Z-API</button>
+      </div>
+      <div id="opDetail"></div>
+    </section>
+
     <section class="card"><h2>Sistema</h2><div id="health">Carregando...</div><div id="readiness"></div></section>
-    <section class="card"><h2>Ações</h2><button onclick="sync()">Sincronizar Z-API</button> <button onclick="demo()">Adicionar oferta demo</button> <button onclick="processQueue()">Processar fila</button></section>
-    <section class="card wide"><h2>Nova oferta por link</h2>
-      <div><input id="productUrl" style="width:min(620px,90%)" placeholder="Cole um link afiliado da Amazon ou Mercado Livre"> <button onclick="previewProduct()">Importar</button></div>
-      <div id="offerForm" style="display:none;margin-top:14px">
+
+    <section class="card"><h2>Nova oferta por link</h2>
+      <div class="row"><input id="productUrl" style="flex:1;min-width:220px" placeholder="Link do produto"> <button onclick="previewProduct()">Importar</button></div>
+      <div id="offerForm" style="display:none;margin-top:12px">
         <input id="externalId" type="hidden"><input id="marketplace" type="hidden"><input id="affiliateUrl" type="hidden">
-        <p><label>Título<br><input id="offerTitle" style="width:min(720px,90%)"></label></p>
-        <p><label>Preço atual<br><input id="currentPrice" type="number" min="0.01" step="0.01"></label> <label>Preço anterior<br><input id="originalPrice" type="number" min="0.01" step="0.01"></label></p>
-        <p><label>Imagem do produto<br><input id="imageUrl" style="width:min(720px,90%)" placeholder="https://..."></label></p>
-        <button onclick="enqueueOffer()">Adicionar à fila</button> <span class="warn">Revise preço e imagem antes de adicionar.</span>
+        <p><label><small>Título</small><input id="offerTitle" style="width:100%"></label></p>
+        <div class="row"><label><small>Preço atual</small><input id="currentPrice" type="number" min="0.01" step="0.01"></label><label><small>Preço anterior</small><input id="originalPrice" type="number" min="0.01" step="0.01"></label></div>
+        <p><label><small>Imagem</small><input id="imageUrl" style="width:100%" placeholder="https://..."></label></p>
+        <button onclick="enqueueOffer()">Adicionar à fila</button>
       </div>
     </section>
+
+    <section class="card wide"><h2>Fontes de ofertas</h2>
+      <div class="muted" style="margin-bottom:10px">Cada fonte busca sozinha, filtra e joga na fila. Role a tabela para o lado se precisar.</div>
+      <div id="sources"></div>
+    </section>
+
     <section class="card wide"><h2>Destinos</h2><div id="destinations"></div></section>
     <section class="card wide"><h2>Fila de ofertas</h2><div id="queue"></div></section>
   </main>
+
   <script>
     const token = document.querySelector("#token");
     token.value = localStorage.getItem("ofertaflow-token") || "";
-    const auth = () => ({Authorization: `Bearer ${token.value}`, "Content-Type":"application/json"});
-    async function api(path, options={}) { const response=await fetch(path,{...options,headers:{...auth(),...options.headers}}); const body=await response.json(); if(!response.ok) throw new Error(body.error||"Erro"); return body; }
-    function saveToken(){localStorage.setItem("ofertaflow-token",token.value);refresh()}
-    async function sync(){try{await api("/api/destinations/sync",{method:"POST"});refresh()}catch(e){alert(e.message)}}
-    async function demo(){try{await api("/api/demo/enqueue",{method:"POST"});refresh()}catch(e){alert(e.message)}}
-    async function processQueue(){try{await api("/api/queue/process",{method:"POST"});refresh()}catch(e){alert(e.message)}}
-    async function previewProduct(){
-      try{
-        const product=await api("/api/products/preview",{method:"POST",body:JSON.stringify({url:document.querySelector("#productUrl").value})});
-        for(const [id,value] of [["externalId",product.externalId],["marketplace",product.marketplace],["affiliateUrl",product.affiliateUrl],["offerTitle",product.title],["imageUrl",product.imageUrl]])document.querySelector(`#${id}`).value=value||"";
-        document.querySelector("#offerForm").style.display="block";
-      }catch(e){alert(e.message)}
+    let sourceCategories = [];
+
+    const auth = () => ({ Authorization: `Bearer ${token.value}`, "Content-Type": "application/json" });
+    async function api(path, options = {}) {
+      const response = await fetch(path, { ...options, headers: { ...auth(), ...options.headers } });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Erro");
+      return body;
     }
-    async function enqueueOffer(){
-      const value=id=>document.querySelector(`#${id}`).value.trim();
-      const offer={externalId:value("externalId"),marketplace:value("marketplace"),affiliateUrl:value("affiliateUrl"),title:value("offerTitle"),imageUrl:value("imageUrl"),currentPrice:Number(value("currentPrice")),originalPrice:value("originalPrice")?Number(value("originalPrice")):null};
-      try{await api("/api/offers",{method:"POST",body:JSON.stringify(offer)});document.querySelector("#offerForm").style.display="none";document.querySelector("#productUrl").value="";document.querySelector("#currentPrice").value="";document.querySelector("#originalPrice").value="";await refresh();alert("Oferta adicionada à fila em modo seguro.")}catch(e){alert(e.message)}
+    function saveToken() { localStorage.setItem("ofertaflow-token", token.value); refresh(); }
+    const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+    const table = (rows, cols) => rows.length
+      ? `<div class="table-wrap"><table><thead><tr>${cols.map(c => `<th>${c[0]}</th>`).join("")}</tr></thead><tbody>${rows.map(r => `<tr>${cols.map(c => `<td>${c[1](r)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`
+      : "<span class=muted>Nenhum registro.</span>";
+    const time = value => value ? new Date(value).toLocaleString("pt-BR") : "—";
+
+    async function togglePower() {
+      const button = document.querySelector("#power");
+      const turningOn = button.dataset.running !== "true";
+      if (turningOn && !confirm("Ligar a operação? O bot passa a buscar ofertas e publicar sozinho nos destinos ativos.")) return;
+      button.disabled = true;
+      try { await api("/api/operation", { method: "POST", body: JSON.stringify({ running: turningOn }) }); }
+      catch (e) { powerError(e.message); alert(e.message); }
+      finally { button.disabled = false; await refresh(); }
     }
-    const escapeHtml=value=>String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
-    const table=(rows,cols)=>rows.length?`<div class="table-wrap"><table><thead><tr>${cols.map(c=>`<th>${c[0]}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${c[1](r)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`:"<span class=muted>Nenhum registro.</span>";
-    async function configureDestination(button){
-      const row=button.closest("tr"),id=decodeURIComponent(button.dataset.id);
-      const active=row.querySelector("[data-field=active]").checked;
-      if(active&&!confirm("Ativar este destino para receber publicações? No modo real, mensagens poderão ser enviadas."))return;
-      try{await api(`/api/destinations/${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify({active,minDiscount:Number(row.querySelector("[data-field=minDiscount]").value),maxDailyPosts:Number(row.querySelector("[data-field=maxDailyPosts]").value),minMinutesBetweenPosts:Number(row.querySelector("[data-field=minMinutesBetweenPosts]").value)})});await refresh()}catch(e){alert(e.message)}
+    async function applyDailyLimit() {
+      const value = Number(document.querySelector("#dailyLimit").value);
+      try {
+        const r = await api("/api/operation/daily-limit", { method: "POST", body: JSON.stringify({ maxDailyPosts: value }) });
+        await refresh();
+        const aviso = r.feasiblePerDay < r.maxDailyPosts ? `\n\nAtencao: na janela de publicacao so cabem ${r.feasiblePerDay} posts por dia. Amplie a janela para chegar a ${r.maxDailyPosts}.` : "";
+        alert(`${r.maxDailyPosts} posts por dia aplicados a ${r.destinations} destino(s).\nIntervalo ajustado para ${r.minMinutesBetweenPosts} min entre posts.${aviso}`);
+      } catch (e) { alert(e.message); }
     }
-    async function refresh(){
-      const h=await fetch("/health").then(r=>r.json());document.querySelector("#health").innerHTML=`<b class=ok>Online</b><br>Modo seguro: <b class=${h.dryRun?"warn":"ok"}>${h.dryRun?"ATIVO":"ENVIO REAL"}</b>`;
-      if(!token.value)return;
-      try{
-        const [d,q,r]=await Promise.all([api("/api/destinations"),api("/api/queue"),api("/api/readiness")]);
-        document.querySelector("#readiness").innerHTML=`<div class="status"><b class=${r.zapiConfigured?"ok":"warn"}>Z-API ${r.zapiConfigured?"configurada":"a configurar"}</b><br><span class="muted">${r.activeChannels} canal(is) ativo(s) · imagem em canal ${r.channelImageEnabled?"liberada":"bloqueada para homologação"}</span></div>`;
-        document.querySelector("#destinations").innerHTML=table(d,[["Nome",x=>`<b>${escapeHtml(x.name)}</b><br><small class=${x.available===false?"bad":"muted"}>${x.available===false?"Indisponível":"Sincronizado"}</small>`],["Tipo",x=>escapeHtml(x.type)],["Desconto mín.",x=>`<input data-field="minDiscount" type="number" min="0" max="100" value="${Number(x.minDiscount??0)}">%`],["Limite/dia",x=>`<input data-field="maxDailyPosts" type="number" min="1" max="500" value="${Number(x.maxDailyPosts??1)}">`],["Intervalo",x=>`<input data-field="minMinutesBetweenPosts" type="number" min="0" max="1440" value="${Number(x.minMinutesBetweenPosts??0)}"> min`],["Ativo",x=>`<input data-field="active" type="checkbox" ${x.active?"checked":""} ${x.available===false?"disabled":""}>`],["",x=>`<button class="secondary" data-id="${encodeURIComponent(x.id)}" onclick="configureDestination(this)">Salvar</button>`]]);
-        document.querySelector("#queue").innerHTML=table(q,[["Produto",x=>escapeHtml(x.offer.title)],["Score",x=>Number(x.score)],["Status",x=>escapeHtml(x.status)],["Tentativas",x=>Number(x.attempts)],["Próxima tentativa",x=>x.nextAttemptAt?escapeHtml(new Date(x.nextAttemptAt).toLocaleString("pt-BR")):"—"]]);
-      }catch(e){document.querySelector("#destinations").innerHTML=`<span class=warn>${e.message}</span>`}
-    }refresh();setInterval(refresh,15000);
+
+    async function applyWindow() {
+      const start = Number(document.querySelector("#windowStart").value);
+      const end = Number(document.querySelector("#windowEnd").value);
+      if (end - start >= 20 && !confirm("Publicar quase 24h por dia manda mensagem de madrugada e costuma irritar o grupo. Confirma?")) return;
+      try { const r = await api("/api/operation/window", { method: "POST", body: JSON.stringify({ start, end }) }); await refresh(); alert(`Janela salva: ${r.start}h as ${r.end}h (${r.hours}h por dia).`); }
+      catch (e) { alert(e.message); }
+    }
+    async function sync() { try { await api("/api/destinations/sync", { method: "POST" }); await refresh(); } catch (e) { alert(e.message); } }
+    async function processQueue() {
+      try {
+        const r = await api("/api/queue/process", { method: "POST" });
+        await refresh();
+        if (r.processed) { alert("Oferta publicada."); return; }
+        const detail = (r.blocked || []).map(b => `• ${b.name}: ${b.reason}`).join("\n");
+        const motivos = { empty: "a fila nao tem nenhuma oferta pronta", "outside-window": "estamos fora da janela de publicacao", busy: "ja existe uma publicacao em andamento" };
+        alert(detail ? `Nada publicado agora porque todos os destinos estao bloqueados:\n\n${detail}` : `Nada publicado agora: ${motivos[r.reason] || r.reason || "sem oferta elegivel"}.`);
+      } catch (e) { alert(e.message); }
+    }
+
+    async function runSources() {
+      try {
+        const r = await api("/api/sources/run", { method: "POST", body: "{}" });
+        await refresh();
+        alert(r.runs && r.runs.length ? r.runs.map(x => `${x.sourceId}: ${x.collected} lidas, ${x.enqueued} para a fila, ${x.rejected} filtradas, ${x.duplicated} repetidas${x.errors.length ? "\nErro: " + x.errors[0] : ""}`).join("\n") : "Nenhuma fonte ativa. Marque a coluna Ativa na tabela de fontes e clique em Salvar.");
+      } catch (e) { alert(e.message); }
+    }
+
+    function powerError(message) {
+      const button = document.querySelector("#power");
+      button.dataset.running = "false";
+      button.className = "power secondary";
+      button.textContent = "⚠  Erro — clique para tentar de novo";
+      button.title = message || "";
+    }
+    function renderOperation(op) {
+      const button = document.querySelector("#power");
+      button.dataset.running = String(op.running);
+      button.textContent = op.running ? "⏸  PAUSAR OPERAÇÃO" : "▶  LIGAR OPERAÇÃO";
+      button.className = op.running ? "power danger" : "power";
+      document.querySelector("#windowStart").value = op.window.start;
+      document.querySelector("#windowEnd").value = op.window.end;
+      const metric = (label, value, klass = "") => `<div class="metric"><small class="muted">${label}</small><b class="${klass}">${value}</b></div>`;
+      document.querySelector("#opStatus").innerHTML = [
+        metric("Estado", op.running ? "Ligado" : "Pausado", op.running ? "ok" : "warn"),
+        metric("Envio", op.dryRun ? "Simulado" : "REAL", op.dryRun ? "warn" : "ok"),
+        metric("Publicados hoje", `${op.publishedToday}/${op.capacityToday}`),
+        metric("Cabe/dia por destino", op.perDayByInterval || "—"),
+        metric("Na fila", op.queued, op.queued ? "ok" : "warn"),
+        metric("Destinos ativos", op.activeDestinations, op.activeDestinations ? "ok" : "bad"),
+        metric("Janela", `${op.window.start}h–${op.window.end}h`, op.withinWindow ? "ok" : "warn")
+      ].join("");
+      const problems = [];
+      if (!op.activeDestinations) problems.push("Nenhum destino ativo: ative um grupo ou canal na tabela de destinos.");
+      if (!op.queued && op.running) problems.push("Fila vazia: verifique se alguma fonte de ofertas está ativa.");
+      if (!op.withinWindow) problems.push(`Fora da janela de publicação (${op.window.start}h às ${op.window.end}h). O bot só publica dentro dela.`);
+      for (const item of op.overbooked || []) problems.push(`${item.name}: limite de ${item.maxDailyPosts}/dia é impossível com intervalo de ${item.minMinutesBetweenPosts} min — na janela atual cabem ${item.realistic}. Use "Aplicar a todos" para ajustar o intervalo automaticamente.`);
+      document.querySelector("#opDetail").innerHTML =
+        problems.map(item => `<div class="status warn">${escapeHtml(item)}</div>`).join("") +
+        (op.destinations.length ? table(op.destinations, [
+          ["Destino", x => escapeHtml(x.name)],
+          ["Tipo", x => escapeHtml(x.type)],
+          ["Hoje", x => `${x.publishedToday} de ${x.maxDailyPosts}`],
+          ["Intervalo", x => `${x.minMinutesBetweenPosts} min`],
+          ["Ainda cabe hoje", x => Math.max(0, x.feasibleToday - x.publishedToday)],
+          ["Liberado a partir de", x => x.nextAvailableAt ? time(x.nextAvailableAt) : "agora"]
+        ]) : "");
+    }
+
+    function renderSources(sources) {
+      const cat = (values = []) => `<select data-field="categories" multiple size="4" style="min-width:180px">${sourceCategories.filter(c => c.id).map(c => `<option value="${escapeHtml(c.id)}" ${values.includes(c.id) ? "selected" : ""}>${escapeHtml(c.name)}</option>`).join("")}</select>`;
+      const num = (field, value, min, max, step) => `<input data-field="${field}" type="number" min="${min}" max="${max}" step="${step || 1}" value="${Number(value || 0)}">`;
+      const stats = x => x.lastRunStats
+        ? `<small class="muted">${time(x.lastRunAt)}<br>${x.lastRunStats.collected} lidas · ${x.lastRunStats.enqueued} p/ fila · ${x.lastRunStats.rejected} filtradas · ${x.lastRunStats.duplicated} repetidas${x.lastRunStats.errors && x.lastRunStats.errors.length ? `<br><span class=bad>${escapeHtml(x.lastRunStats.errors[0])}</span>` : ""}</small>`
+        : "<small class=muted>Nunca executada</small>";
+      document.querySelector("#sources").innerHTML = table(sources, [
+        ["Ativa", x => `<input data-field="enabled" type="checkbox" ${x.enabled ? "checked" : ""}> <button class="secondary" data-id="${encodeURIComponent(x.id)}" onclick="configureSource(this)">Salvar</button>`],
+        ["Fonte", x => `<b>${escapeHtml(x.label)}</b><br><small class=muted>${escapeHtml(x.marketplace || "")}</small>`],
+        ["Categorias (rodízio)", x => cat(x.categories || []) + "<br><small class=muted>nenhuma = vitrine geral</small>"],
+        ["Páginas", x => num("pages", x.pages, 1, 10)],
+        ["Desc. mín.", x => num("minDiscount", x.minDiscount, 0, 100) + "%"],
+        ["Nota mín.", x => num("minRating", x.minRating, 0, 5, 0.1)],
+        ["Preço de", x => num("minPrice", x.minPrice, 0, 1000000)],
+        ["até", x => num("maxPrice", x.maxPrice, 0, 1000000)],
+        ["Máx./rodada", x => num("maxPerRun", x.maxPerRun, 1, 50)],
+        ["Máx./nicho", x => num("maxPerNiche", x.maxPerNiche, 1, 50)],
+        ["Bloquear", x => `<input data-field="blockedKeywords" style="width:130px" value="${escapeHtml((x.blockedKeywords || []).join(", "))}" placeholder="capinha, película">`],
+        ["Última busca", stats]
+      ]);
+    }
+
+    async function configureSource(button) {
+      const row = button.closest("tr");
+      const id = decodeURIComponent(button.dataset.id);
+      const field = name => row.querySelector(`[data-field="${name}"]`);
+      const enabled = field("enabled").checked;
+      const patch = { enabled, categories: [...field("categories").selectedOptions].map(o => o.value), blockedKeywords: field("blockedKeywords").value };
+      for (const name of ["pages", "minDiscount", "minRating", "minPrice", "maxPrice", "maxPerRun", "maxPerNiche"]) patch[name] = Number(field(name).value);
+      try { await api(`/api/sources/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }); await refresh(); }
+      catch (e) { alert(e.message); }
+    }
+
+    async function configureDestination(button) {
+      const row = button.closest("tr");
+      const id = decodeURIComponent(button.dataset.id);
+      const field = name => row.querySelector(`[data-field="${name}"]`);
+      const active = field("active").checked;
+      if (active && !confirm("Ativar este destino para receber publicações?")) return;
+      const nicheIds = [...field("nicheIds").selectedOptions].map(o => o.value);
+      try {
+        await api(`/api/destinations/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ active, nicheIds: nicheIds.length ? nicheIds : ["general"], minDiscount: Number(field("minDiscount").value), maxDailyPosts: Number(field("maxDailyPosts").value), minMinutesBetweenPosts: Number(field("minMinutesBetweenPosts").value) })
+        });
+        await refresh();
+      } catch (e) { alert(e.message); }
+    }
+
+    let niches = [];
+    function renderDestinations(destinations) {
+      const nicheSelect = values => `<select data-field="nicheIds" multiple size="3" style="min-width:170px">${niches.map(n => `<option value="${escapeHtml(n.id)}" ${values.includes(n.id) ? "selected" : ""}>${escapeHtml(n.name)}</option>`).join("")}</select>`;
+      document.querySelector("#destinations").innerHTML = table(destinations, [
+        ["Ativo", x => `<input data-field="active" type="checkbox" ${x.active ? "checked" : ""} ${x.available === false ? "disabled" : ""}> <button class="secondary" data-id="${encodeURIComponent(x.id)}" onclick="configureDestination(this)">Salvar</button>`],
+        ["Nome", x => `<b>${escapeHtml(x.name || x.id)}</b><br><small class=${x.available === false ? "bad" : "muted"}>${escapeHtml(x.type)} · ${x.available === false ? "indisponível" : "sincronizado"}</small>`],
+        ["Nichos", x => nicheSelect(x.nicheIds || [])],
+        ["Desc. mín.", x => `<input data-field="minDiscount" type="number" min="0" max="100" value="${Number(x.minDiscount ?? 0)}">%`],
+        ["Posts/dia", x => `<input data-field="maxDailyPosts" type="number" min="1" max="500" value="${Number(x.maxDailyPosts ?? 1)}">`],
+        ["Intervalo", x => `<input data-field="minMinutesBetweenPosts" type="number" min="0" max="1440" value="${Number(x.minMinutesBetweenPosts ?? 0)}"> min`]
+      ]);
+    }
+
+    async function previewProduct() {
+      try {
+        const product = await api("/api/products/preview", { method: "POST", body: JSON.stringify({ url: document.querySelector("#productUrl").value }) });
+        for (const [id, value] of [["externalId", product.externalId], ["marketplace", product.marketplace], ["affiliateUrl", product.affiliateUrl], ["offerTitle", product.title], ["imageUrl", product.imageUrl]]) document.querySelector(`#${id}`).value = value || "";
+        document.querySelector("#offerForm").style.display = "block";
+      } catch (e) { alert(e.message); }
+    }
+    async function enqueueOffer() {
+      const value = id => document.querySelector(`#${id}`).value.trim();
+      const offer = { externalId: value("externalId"), marketplace: value("marketplace"), affiliateUrl: value("affiliateUrl"), title: value("offerTitle"), imageUrl: value("imageUrl"), currentPrice: Number(value("currentPrice")), originalPrice: value("originalPrice") ? Number(value("originalPrice")) : null };
+      try { await api("/api/offers", { method: "POST", body: JSON.stringify(offer) }); document.querySelector("#offerForm").style.display = "none"; await refresh(); alert("Oferta adicionada à fila."); }
+      catch (e) { alert(e.message); }
+    }
+
+    const MODES = { linkbuilder: "Gerador do painel de afiliados", params: "Parâmetros matt_word/matt_tool", untagged: "SEM atribuição (teste)", none: "Não configurado — nada publica" };
+    async function refresh() {
+      const health = await fetch("/health").then(r => r.json());
+      document.querySelector("#health").innerHTML = `<b class=ok>Online</b> · envio <b class=${health.dryRun ? "warn" : "ok"}>${health.dryRun ? "SIMULADO" : "REAL"}</b>`;
+      if (!token.value) { document.querySelector("#readiness").innerHTML = "<div class='status warn'>Cole o ADMIN_TOKEN acima para operar.</div>"; return; }
+      try {
+        const settled = await Promise.allSettled([
+          api("/api/destinations"), api("/api/queue"), api("/api/readiness"), api("/api/sources"), api("/api/operation"), api("/api/niches")
+        ]);
+        const [destinations, queue, readiness, sources, operation, nicheList] = settled.map(r => r.status === "fulfilled" ? r.value : null);
+        const failures = settled.filter(r => r.status === "rejected").map(r => r.reason.message);
+        niches = nicheList || niches;
+        if (operation) renderOperation(operation); else powerError(failures[0]);
+        if (sources) { sourceCategories = sources.categories; renderSources(sources.sources); }
+        if (destinations) renderDestinations(destinations);
+        if (!readiness) {
+          document.querySelector("#readiness").innerHTML = failures.map(m => `<div class="status bad">${escapeHtml(m)}</div>`).join("");
+          return;
+        }
+        const af = readiness.affiliate || {};
+        const afClass = af.mode === "linkbuilder" ? "ok" : af.mode === "params" ? "warn" : "bad";
+        document.querySelector("#readiness").innerHTML =
+          `<div class="status"><b class=${readiness.zapiConfigured ? "ok" : "warn"}>Z-API ${readiness.zapiConfigured ? "configurada" : "a configurar"}</b><br><span class="muted">${readiness.activeChannels} canal(is) ativo(s) · imagem em canal ${readiness.channelImageEnabled ? "liberada" : "bloqueada"}</span></div>` +
+          `<div class="status"><b class=${afClass}>Link de afiliado: ${escapeHtml(MODES[af.mode] || af.mode || "?")}</b><br><span class="muted">${Number(af.cachedLinks || 0)} links em cache${af.sessionValid === false ? " · <span class=bad>sessão expirada</span>" : ""}</span></div>` +
+          (readiness.alerts || []).map(a => `<div class="status"><b class=warn>${escapeHtml(a.type)}</b> <span class=muted>${time(a.at)}</span><br>${escapeHtml(a.message)}</div>`).join("") +
+          failures.map(m => `<div class="status bad">${escapeHtml(m)}</div>`).join("");
+        if (queue) document.querySelector("#queue").innerHTML = table(queue, [
+          ["Produto", x => escapeHtml(x.offer.title)],
+          ["Preço", x => `R$ ${Number(x.offer.currentPrice).toFixed(2)}`],
+          ["Score", x => Number(x.score)],
+          ["Status", x => `${escapeHtml(x.status)}${x.lastDeferredReason ? `<br><small class=muted>${escapeHtml(x.lastDeferredReason)}</small>` : ""}`],
+          ["Preço confirmado", x => time(x.confirmedAt)]
+        ]);
+      } catch (e) {
+        document.querySelector("#readiness").innerHTML = `<div class="status bad">${escapeHtml(e.message)}</div>`;
+      }
+    }
+    refresh();
+    setInterval(refresh, 15000);
   </script>
 </body>
 </html>
