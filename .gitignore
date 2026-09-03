@@ -7,3 +7,4 @@ data/*.json
 coverage/
 *.log
 node_modules/
+referencia-main/
