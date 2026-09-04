@@ -52,3 +52,34 @@ test("produto de casa de verdade nao e afetado", () => {
   assert.ok(nichos.includes("home"));
   assert.ok(!nichos.includes("sports"));
 });
+
+test("o nucleo do titulo manda: atributo nao rouba o produto", () => {
+  // Titulo de marketplace comeca pelo TIPO do produto; o resto e atributo,
+  // acessorio ou marca. Ignorar isso trocava o canal de destino.
+  const casos = [
+    ["Mochila Viagem Executiva Grande Notebook Masculina", "fashion"],   // carrega notebook, nao e um
+    ["Creatina Monohidratada em Pote 300g 100% Pura", "sports"],         // pote e embalagem
+    ["Cadeira Gamer ThunderX3 Reclinavel", "computing-gaming"],          // "cadeira" sozinha seria casa
+    ["Notebook Dell Inspiron 15 i5 8GB", "computing-gaming"],
+    ["Air Fryer Fritadeira Eletrica 5L Mondial", "home"],
+    ["Fralda Pampers Premium Care XG 60un", "kids"],
+    ["Chinelo Havaianas Masculino Top Max", "fashion"]
+  ];
+  for (const [titulo, esperado] of casos) {
+    const nichos = inferNiches({ title: titulo }).filter((id) => id !== "general");
+    assert.deepEqual(nichos, [esperado], `${titulo} -> ${nichos.join(",")}`);
+  }
+});
+
+test("marca com nome de palavra comum nao cria nicho", () => {
+  // "Mercado Pago" fazia a maquininha virar oferta de mercado (alimentos).
+  const nichos = inferNiches({ title: "Maquininha De Cartao Pro 3 Mercado Pago Point" });
+  assert.ok(!nichos.includes("market"), nichos.join(","));
+});
+
+test("perfume e reconhecido como beleza", () => {
+  // "Deo Colonia" nao existia na lista: o produto saia sem nicho nenhum e nao
+  // chegava a canal algum.
+  assert.ok(inferNiches({ title: "O Boticario Insensatez Deo Colonia 100ml" }).includes("beauty"));
+  assert.ok(inferNiches({ title: "Perfume Malbec Eau De Parfum 100ml" }).includes("beauty"));
+});

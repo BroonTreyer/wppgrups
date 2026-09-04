@@ -2,7 +2,7 @@ export const DEFAULT_NICHES = [
   { id: "electronics", name: "Eletronicos e celulares", keywords: ["celular", "smartphone", "iphone", "motorola", "samsung galaxy", "xiaomi", "redmi", "tv", "smart tv", "fone", "fone de ouvido", "airpods", "caixa de som", "audio", "camera", "tablet", "smartwatch", "carregador", "power bank", "eletronico", "projetor", "alexa"] },
   { id: "computing-gaming", name: "Informatica e games", keywords: ["notebook", "computador", "pc gamer", "monitor", "teclado", "mouse", "ssd", "hd externo", "memoria ram", "placa de video", "impressora", "roteador", "headset", "webcam", "console", "playstation", "xbox", "nintendo", "game", "cadeira gamer", "pendrive"] },
   { id: "home", name: "Casa, cozinha e decoracao", keywords: ["casa", "cozinha", "panela", "frigideira", "air fryer", "fritadeira", "liquidificador", "batedeira", "cafeteira", "geladeira", "fogao", "microondas", "aspirador", "lava roupas", "maquina de lavar", "ventilador", "ar condicionado", "purificador", "jogo de cama", "lencol", "edredom", "travesseiro", "colchao", "cama box", "cortina", "tapete", "toalha", "toalha de banho", "roupao", "jogo de toalhas", "cobertor", "manta", "protetor de colchao", "fronha", "sofa", "guarda roupa", "mesa", "cadeira", "luminaria", "organizador", "cesto", "pote", "jarra", "talher", "copo", "prato", "faqueiro", "moveis", "decoracao", "eletrodomestico", "utensilio", "utilidade domestica"] },
-  { id: "beauty", name: "Beleza e cuidados pessoais", keywords: ["beleza", "perfume", "maquiagem", "batom", "base", "cabelo", "shampoo", "condicionador", "hidratante", "protetor solar", "skin care", "serum", "creme", "secador", "chapinha", "barbeador", "depilador", "esmalte"] },
+  { id: "beauty", name: "Beleza e cuidados pessoais", keywords: ["beleza", "perfume", "colonia", "deo colonia", "eau de parfum", "eau de toilette", "body splash", "desodorante", "boticario", "natura", "avon", "maquiagem", "batom", "base", "rimel", "delineador", "cabelo", "shampoo", "condicionador", "hidratante", "protetor solar", "skin care", "serum", "creme", "secador", "chapinha", "barbeador", "depilador", "esmalte"] },
   { id: "fashion", name: "Moda e acessorios", keywords: ["roupa", "camiseta", "camisa", "blusa", "calca", "jeans", "short", "bermuda", "vestido", "saia", "jaqueta", "moletom", "cueca", "calcinha", "sutia", "meia", "pijama", "tenis", "sapato", "sandalia", "chinelo", "bota", "calcado", "bolsa", "mochila", "carteira", "relogio", "oculos", "cinto", "bone", "moda"] },
   { id: "kids", name: "Mamaes, bebes e criancas", keywords: ["bebe", "crianca", "infantil", "brinquedo", "boneca", "lego", "fralda", "carrinho de bebe", "berco", "chupeta", "mamadeira", "cadeirinha", "gestante", "gravida", "maternidade", "amamentacao", "bomba de leite", "body", "macacao", "enxoval", "mordedor", "banheira", "trocador", "papinha", "sling", "canguru", "cha de bebe", "pos parto", "cinta pos parto"] },
   { id: "tools-auto", name: "Ferramentas e automotivo", keywords: ["ferramenta", "furadeira", "parafusadeira", "esmerilhadeira", "serra", "chave de fenda", "trena", "automotivo", "carro", "pneu", "oleo de motor", "bateria automotiva", "capacete", "motocicleta", "retrovisor", "compressor"] },
@@ -37,20 +37,68 @@ const WEAK_KEYWORDS = new Set([
   "saude", "audio", "eletronico", "game", "carro", "crianca", "infantil", "beleza"
 ]);
 
+// Marcas cujo nome e uma palavra comum. Sem neutraliza-las, "Maquininha de
+// Cartao Mercado Pago" vira nicho de mercado por causa do nome do adquirente, e
+// "Casas Bahia" viraria item de casa.
+const BRAND_PHRASES = [
+  "mercado pago", "mercado livre", "mercado envios", "casas bahia",
+  "casa bahia", "vivo casa", "jogo aberto"
+];
+
+// Ligacoes que nao carregam sentido de produto. Servem para achar o "nucleo" do
+// titulo — as primeiras palavras que dizem O QUE a coisa e.
+const FILLERS = new Set(["de", "da", "do", "com", "sem", "para", "em", "kit", "pack", "und", "unidade", "unidades", "pecas", "peca"]);
+const HEAD_SIZE = 3;
+
+const semMarcas = (text) => BRAND_PHRASES.reduce((acc, marca) => acc.replaceAll(marca, " "), text);
+
+/** As primeiras palavras uteis: em titulo de marketplace, e o tipo do produto. */
+export function headTokens(text, size = HEAD_SIZE) {
+  return tokens(text).filter((word) => word.length >= 3 && !FILLERS.has(word)).slice(0, size);
+}
+
 export function inferNiches(offer, niches = DEFAULT_NICHES) {
-  const text = normalize([offer.title, offer.category, ...(offer.tags ?? [])].join(" "));
+  const bruto = normalize([offer.title, offer.category, ...(offer.tags ?? [])].join(" "));
+  const text = semMarcas(bruto);
   const words = tokens(text);
+  // O nucleo sai do TITULO, nao do texto todo: categoria e tags vem depois e
+  // deslocariam o que conta como comeco.
+  const head = headTokens(semMarcas(normalize(offer.title)));
+  const noNucleo = (keyword) => {
+    const alvo = normalize(keyword);
+    return alvo.includes(" ")
+      ? head.join(" ").includes(alvo)
+      : head.some((word) => word === alvo || (word.endsWith("s") ? word.slice(0, -1) : word) === alvo);
+  };
 
   const porNicho = niches
     .filter((niche) => niche.id !== "general")
     .map((niche) => {
       const casadas = niche.keywords.filter((keyword) => matchesKeyword(text, words, keyword));
-      return { id: niche.id, casadas, forte: casadas.some((keyword) => !WEAK_KEYWORDS.has(normalize(keyword))) };
+      return {
+        id: niche.id,
+        casadas,
+        nucleo: casadas.some(noNucleo),
+        forte: casadas.some((keyword) => !WEAK_KEYWORDS.has(normalize(keyword)))
+      };
     })
     .filter((item) => item.casadas.length);
 
-  // Havendo qualquer sinal forte, os nichos que so casaram por palavra fraca
-  // saem: eles sao ruido, e no roteamento viram publicacao no canal errado.
+  // Regra 1, a mais decisiva: se algum nicho casou no NUCLEO do titulo, so ele
+  // vale. "Mochila Viagem Executiva Grande Notebook" e mochila; "notebook" diz
+  // o que ela carrega. "Creatina ... em Pote" e creatina; "pote" e a embalagem.
+  //
+  // A regra do sinal forte vale DENTRO do nucleo tambem: "Creatina Monohidratada
+  // em Pote" tem os dois no comeco, e "Cadeira Gamer" casa com "cadeira" (fraca,
+  // de casa) e com "cadeira gamer" (forte, de games). Sem isso, empatam.
+  const noComeco = porNicho.filter((item) => item.nucleo);
+  if (noComeco.length) {
+    const fortesNoComeco = noComeco.filter((item) => item.forte);
+    const vencedores = fortesNoComeco.length ? fortesNoComeco : noComeco;
+    return [...new Set([...vencedores.map((item) => item.id), "general"])];
+  }
+
+  // Regra 2: sem nada no nucleo, sinal forte ainda vence palavra de formato.
   const temForte = porNicho.some((item) => item.forte);
   const matched = porNicho.filter((item) => !temForte || item.forte).map((item) => item.id);
   return [...new Set([...matched, "general"])];
