@@ -243,22 +243,16 @@ export class QueueService {
           selected.nextAttemptAt = new Date(this.clock().getTime() + this.config.scheduler.retryDelayMinutes * 60_000).toISOString();
           selected.lastDeferredReason = "Nenhum destino elegivel neste momento";
         } else if (result.deliveredDestinations) {
-          // A oferta foi para UM destino. Ela so encerra quando todos os canais
-          // do nicho dela ja receberam — ate la volta para a fila e sera
-          // reavaliada, em outro momento, pelo score do proximo canal. E isso
-          // que escalona a mesma oferta entre os canais em vez de dispara-la
-          // para todos no mesmo minuto.
+          // UMA oferta, UM destino. Publicada, ela encerra — nao caminha para os
+          // outros canais do nicho. Repetir o mesmo produto em varios grupos faz
+          // quem estiver em mais de um ver a mesma oferta duas vezes, e a rede
+          // inteira passa a parecer um so mural replicado.
           selected.deliveredTo = [...new Set([...(selected.deliveredTo ?? []), destination.id])];
-          const faltam = current.destinations.filter((outro) =>
-            outro.active && outro.available !== false
-            && !selected.deliveredTo.includes(outro.id)
-            && (outro.nicheIds ?? []).some((id) => (selected.nicheIds ?? []).includes(id)));
-          selected.status = faltam.length ? "queued" : "published";
+          selected.status = "published";
           selected.attempts = 0;
           selected.nextAttemptAt = null;
-          selected.lastDeferredReason = faltam.length
-            ? `Publicado em ${destination.name || destination.id}; faltam ${faltam.length} canal(is)`
-            : null;
+          selected.lastDeferredReason = null;
+          selected.publishedTo = destination.name || destination.id;
         } else {
           selected.status = selected.attempts >= 3 ? "failed" : "queued";
           selected.nextAttemptAt = selected.status === "queued" ? new Date(this.clock().getTime() + this.config.scheduler.retryDelayMinutes * 60_000).toISOString() : null;

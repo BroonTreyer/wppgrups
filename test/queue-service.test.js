@@ -196,7 +196,7 @@ test("cada canal recebe a oferta do nicho dele, nao a melhor da fila", async () 
   assert.deepEqual(porDestino, { casa: "panela", tech: "fone" });
 });
 
-test("uma oferta vai para um destino por vez, nao para todos de uma vez", async () => {
+test("uma oferta vai para UM destino e encerra, sem se repetir noutro", async () => {
   const canais = structuredClone(CANAIS).map((canal) => ({ ...canal, nicheIds: ["home"] }));
   const store = new MemoryStore(canais);
   const enviados = [];
@@ -218,14 +218,13 @@ test("uma oferta vai para um destino por vez, nao para todos de uma vez", async 
   await service.enqueue({ ...SAMPLE_OFFER, externalId: "panela", title: "Panela de Pressao", nicheIds: ["home"] });
 
   await service.processNext();
-  assert.equal(enviados.length, 1, "so um canal por ciclo");
-  // Enquanto faltar canal, a oferta volta para a fila em vez de encerrar.
-  assert.equal(store.state.queue[0].status, "queued");
-  assert.match(store.state.queue[0].lastDeferredReason, /faltam 1 canal/);
+  assert.equal(enviados.length, 1, "so um canal recebe");
+  assert.equal(store.state.queue[0].status, "published", "publicada uma vez, encerra");
 
+  // Os dois canais aceitam o mesmo nicho, mas a oferta nao vai para o segundo:
+  // quem estiver nos dois grupos veria o mesmo produto duas vezes.
   await service.processNext();
-  assert.deepEqual(enviados.sort(), ["casa", "tech"]);
-  assert.equal(store.state.queue[0].status, "published", "encerra quando todos os canais receberam");
+  assert.equal(enviados.length, 1, "nao repete em outro canal");
 });
 
 test("nao repete produto parecido no canal que acabou de publicar um igual", async () => {
