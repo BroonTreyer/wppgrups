@@ -94,15 +94,27 @@ async function processPending() {
 
     const tab = await builderTab(config);
     for (const item of pending) {
-      const answer = await send(tab.id, { type: "generate", url: item.productUrl });
+      let answer = await send(tab.id, { type: "generate", url: item.productUrl });
       if (answer.disconnected && await ensureContentScript(tab.id)) {
-        const retry = await send(tab.id, { type: "generate", url: item.productUrl });
-        Object.assign(answer, retry);
+        // SUBSTITUI a resposta em vez de mesclar: com Object.assign, o
+        // 'disconnected: true' da primeira tentativa sobrevivia a uma segunda
+        // que falhou por motivo real ("nao esta logado"), e o erro de verdade
+        // era tratado como tropeco de canal — some da tela e nunca e reportado.
+        answer = await send(tab.id, { type: "generate", url: item.productUrl });
       }
       if (answer.link) {
         await api("/api/affiliate/link", { method: "POST", body: JSON.stringify({ id: item.id, link: answer.link }) });
         state.resolved += 1;
         state.lastError = null;
+      } else if (answer.disconnected) {
+        // Canal morto nao e defeito do produto: a aba recarregou, o content
+        // script caiu ou o service worker hibernou. Reportar isso ao servidor
+        // gastava uma das 3 tentativas do pedido, e tres tropecos seguidos da
+        // extensao marcavam o produto como 'failed' para sempre — foi o que
+        // travou os 8 pedidos de 03/09. Deixa pendente: o proximo alarme tenta
+        // de novo, e o link empurrado por 'captured-link' ainda pode chegar.
+        state.lastError = "canal com a pagina caiu (" + answer.error + "); tento de novo no proximo ciclo";
+        break;
       } else {
         await api("/api/affiliate/link", { method: "POST", body: JSON.stringify({ id: item.id, error: answer.error || "nao consegui gerar o link" }) });
         state.failed += 1;

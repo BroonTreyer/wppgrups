@@ -74,7 +74,24 @@ async function generate(productUrl) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "ping") { sendResponse({ pong: true, url: location.href }); return false; }
   if (message?.type !== "generate") return false;
-  generate(message.url).then(sendResponse);
+  // Sem o catch, qualquer excecao dentro de generate() deixava o canal aberto e
+  // sem resposta: o background recebia "the message channel closed before a
+  // response was received", que nao diz nada sobre o produto. Responder sempre,
+  // mesmo que seja com o erro, e o que torna a falha diagnosticavel.
+  generate(message.url)
+    .then((answer) => {
+      // O link tambem vai por fora do canal de resposta. Clicar em "gerar" faz o
+      // painel renavegar, e a navegacao DESTROI este content script no meio do
+      // await — o link existia, mas morria junto com o port. Este empurrao chega
+      // pelo runtime, que sobrevive a troca de pagina.
+      if (answer?.link) {
+        try {
+          chrome.runtime.sendMessage({ type: "captured-link", link: answer.link, productUrl: message.url });
+        } catch {}
+      }
+      sendResponse(answer);
+    })
+    .catch((error) => sendResponse({ error: String(error?.message ?? error) }));
   return true;
 });
 
