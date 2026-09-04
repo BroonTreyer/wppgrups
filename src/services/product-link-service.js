@@ -25,6 +25,11 @@ const meta = (html, name) => [
   new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${name}["']`, "i")
 ].map((pattern) => html.match(pattern)?.[1]).find(Boolean) ?? null;
 
+const preferJpg = (url) => {
+  if (!url || !url.includes("mlstatic.com")) return url;
+  return url.replace(/-[A-Z]+\.webp$/i, "-O.jpg").replace(/\.webp$/i, ".jpg");
+};
+
 const amazonTitle = (html) => html.match(/<[^>]+id=["']productTitle["'][^>]*>([\s\S]*?)<\//i)?.[1] ?? null;
 const amazonImage = (html) => attribute(html, `id=["']landingImage["']`, "data-old-hires")
   || attribute(html, `id=["']landingImage["']`, "src");
@@ -57,7 +62,7 @@ export class ProductLinkService {
       title,
       affiliateUrl: source.toString(),
       resolvedUrl: finalUrl.toString(),
-      imageUrl,
+      imageUrl: preferJpg(imageUrl),
       requiresReview: true
     };
   }
