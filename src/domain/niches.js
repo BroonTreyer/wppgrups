@@ -22,11 +22,36 @@ export function matchesKeyword(haystack, words, keyword) {
   return words.some((word) => word === target || singular(word) === target);
 }
 
+/**
+ * Palavras que descrevem FORMATO ou recipiente, nao categoria de produto.
+ *
+ * "Creatina Monohidratada em Pote 300g" casava com `home` por causa de "pote" e
+ * com `sports` por causa de "creatina" — e como todo casamento valia o mesmo, o
+ * suplemento foi parar num canal de casa/kids/beleza. Um pote pode conter
+ * qualquer coisa; creatina so pode ser suplemento.
+ */
+const WEAK_KEYWORDS = new Set([
+  "pote", "copo", "prato", "jarra", "cesto", "organizador", "mesa", "cadeira",
+  "manta", "casa", "cozinha", "utensilio", "utilidade", "decoracao", "moveis",
+  "eletrodomestico", "alimento", "bebida", "higiene", "moda", "esporte",
+  "saude", "audio", "eletronico", "game", "carro", "crianca", "infantil", "beleza"
+]);
+
 export function inferNiches(offer, niches = DEFAULT_NICHES) {
   const text = normalize([offer.title, offer.category, ...(offer.tags ?? [])].join(" "));
   const words = tokens(text);
-  const matched = niches
-    .filter((niche) => niche.id !== "general" && niche.keywords.some((keyword) => matchesKeyword(text, words, keyword)))
-    .map((niche) => niche.id);
+
+  const porNicho = niches
+    .filter((niche) => niche.id !== "general")
+    .map((niche) => {
+      const casadas = niche.keywords.filter((keyword) => matchesKeyword(text, words, keyword));
+      return { id: niche.id, casadas, forte: casadas.some((keyword) => !WEAK_KEYWORDS.has(normalize(keyword))) };
+    })
+    .filter((item) => item.casadas.length);
+
+  // Havendo qualquer sinal forte, os nichos que so casaram por palavra fraca
+  // saem: eles sao ruido, e no roteamento viram publicacao no canal errado.
+  const temForte = porNicho.some((item) => item.forte);
+  const matched = porNicho.filter((item) => !temForte || item.forte).map((item) => item.id);
   return [...new Set([...matched, "general"])];
 }

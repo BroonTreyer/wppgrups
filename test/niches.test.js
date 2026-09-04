@@ -31,3 +31,24 @@ test("separa o publico de mamaes, casa e saude do publico masculino", () => {
   assert.deepEqual(niche("Furadeira Parafusadeira 12v Bosch"), ["tools-auto"]);
   assert.deepEqual(niche("Batom Matte Ruby Rose Kit"), ["beauty"]);
 });
+
+test("palavra de formato nao rouba o produto do nicho certo", () => {
+  // Caso real de 04/09: "pote" jogou creatina no nicho de casa, e ela foi
+  // publicada num canal de kids/casa/beleza em vez do de esportes.
+  const nichos = inferNiches({ title: "Creatina Monohidratada em Pote 300g 100% Pura" });
+  assert.ok(nichos.includes("sports"), "creatina e sinal forte de esportes");
+  assert.ok(!nichos.includes("home"), "'pote' sozinho nao faz de um suplemento item de casa");
+});
+
+test("sem sinal forte, a palavra fraca ainda vale", () => {
+  // Um pote que e so um pote continua sendo item de casa: a regra descarta o
+  // sinal fraco apenas quando existe um forte competindo.
+  const nichos = inferNiches({ title: "Pote Organizador Empilhavel 2 Litros" });
+  assert.ok(nichos.includes("home"), nichos.join(","));
+});
+
+test("produto de casa de verdade nao e afetado", () => {
+  const nichos = inferNiches({ title: "Jogo De Toalhas Buddemeyer Bella Extra Macia" });
+  assert.ok(nichos.includes("home"));
+  assert.ok(!nichos.includes("sports"));
+});
