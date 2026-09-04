@@ -15,22 +15,45 @@ window.addEventListener("message", (event) => {
   if (link) chrome.runtime.sendMessage({ type: "captured-link", link, productUrl: window.__ofertaflowCurrentUrl ?? null });
 });
 
-const findInput = () => {
-  const candidates = [...document.querySelectorAll("input[type=text], input[type=url], input:not([type]), textarea")].filter(visible);
-  const byHint = candidates.find((element) => {
-    const hint = `${element.placeholder ?? ""} ${element.getAttribute("aria-label") ?? ""} ${element.name ?? ""} ${element.id ?? ""}`.toLowerCase();
-    return hint.includes("link") || hint.includes("url") || hint.includes("produto") || hint.includes("cole");
-  });
-  return byHint ?? candidates[0] ?? null;
+// A busca do cabecalho do Mercado Livre existe em TODA pagina, inclusive na de
+// afiliados, e e o primeiro input visivel do documento. Enquanto findInput caia
+// nela por descarte, a extensao digitava a URL do produto na busca e ia parar em
+// lista.mercadolivre.com.br/<url-codificada> — sem link nenhum e sem erro visivel.
+const isSearchBox = (element) => {
+  const marcas = `${element.name ?? ""} ${element.id ?? ""} ${element.placeholder ?? ""} ${element.getAttribute("aria-label") ?? ""}`.toLowerCase();
+  if (/as_word|cb1-edit|buscar|busque|pesquis|search/.test(marcas)) return true;
+  if (element.getAttribute("role") === "combobox") return true;
+  const acao = (element.form?.getAttribute("action") ?? "").toLowerCase();
+  if (acao.includes("/search") || acao.includes("lista.")) return true;
+  // O cabecalho e o rodape nunca contem o campo do gerador.
+  return Boolean(element.closest("header, nav, [class*=nav-search], [class*=header]"));
 };
 
-const findButton = () => {
-  const words = ["gerar", "criar", "encurtar", "obter"];
-  const candidates = [...document.querySelectorAll("button, [role=button], input[type=submit]")].filter(visible);
+const DICAS = ["link", "url", "produto", "cole", "publica"];
+
+const findInput = () => {
+  const candidates = [...document.querySelectorAll("input[type=text], input[type=url], input:not([type]), textarea")]
+    .filter(visible)
+    .filter((element) => !isSearchBox(element));
+  // So aceita campo que se identifique. Sem dica, devolve null e o chamador
+  // reporta o erro: digitar no campo errado e pior que nao digitar, porque
+  // dispara uma navegacao e some com a pagina do gerador.
   return candidates.find((element) => {
-    const label = `${element.textContent ?? ""} ${element.value ?? ""} ${element.getAttribute("aria-label") ?? ""}`.toLowerCase();
-    return words.some((word) => label.includes(word));
+    const hint = `${element.placeholder ?? ""} ${element.getAttribute("aria-label") ?? ""} ${element.name ?? ""} ${element.id ?? ""}`.toLowerCase();
+    return DICAS.some((dica) => hint.includes(dica));
   }) ?? null;
+};
+
+const findButton = (input) => {
+  const words = ["gerar", "criar", "encurtar", "obter"];
+  const rotulo = (element) => `${element.textContent ?? ""} ${element.value ?? ""} ${element.getAttribute("aria-label") ?? ""}`.toLowerCase();
+  const combina = (element) => words.some((word) => rotulo(element).includes(word));
+  // Procura primeiro DENTRO do bloco do campo: um "criar" de outra secao da
+  // pagina levaria a extensao a clicar em qualquer coisa.
+  const escopo = input?.closest("form, section, [class*=card], [class*=box]") ?? document;
+  const perto = [...escopo.querySelectorAll("button, [role=button], input[type=submit]")].filter(visible).find(combina);
+  if (perto) return perto;
+  return [...document.querySelectorAll("button, [role=button], input[type=submit]")].filter(visible).find(combina) ?? null;
 };
 
 const readLinkFromPage = () => {
@@ -50,6 +73,12 @@ async function generate(productUrl) {
   if (location.pathname.includes("/login") || document.body.innerText.includes("Iniciar sessão")) {
     return { error: "Voce nao esta logado no painel de afiliados do Mercado Livre", fatal: true };
   }
+  // Sair da pagina de afiliados e sinal de que a extensao ja se perdeu (foi o
+  // que aconteceu ao digitar na busca e cair em lista.mercadolivre.com.br).
+  // Parar aqui evita interagir as cegas com uma pagina qualquer do site.
+  if (!location.pathname.includes("/afiliados")) {
+    return { error: `a aba saiu do painel de afiliados (esta em ${location.pathname}); abra o gerador de links e tente de novo`, fatal: true };
+  }
   const input = findInput();
   if (!input) return { error: "Nao encontrei o campo de link nesta pagina. Abra o gerador de links do painel de afiliados.", fatal: true };
 
@@ -59,7 +88,7 @@ async function generate(productUrl) {
   setValue(input, productUrl);
   await sleep(400);
 
-  const button = findButton();
+  const button = findButton(input);
   if (button) button.click();
   else input.form?.requestSubmit?.();
 
