@@ -16,7 +16,7 @@ test("extrai ofertas da pagina publica com preco, imagem e link limpos", () => {
   assert.equal(airFryer.rating, 4.9);
   assert.equal(airFryer.soldLabel, "+10mil vendidos");
   assert.match(airFryer.shipping, /Frete gratis|Frete grátis/);
-  assert.equal(airFryer.imageUrl, "https://http2.mlstatic.com/D_NQ_NP_2X_733418-MLA99504461002_112025-O.jpg");
+  assert.equal(airFryer.imageUrl, "https://http2.mlstatic.com/D_Q_NP_2X_733418-MLA99504461002_112025-O.jpg");
   assert.equal(airFryer.affiliateUrl, "https://www.mercadolivre.com.br/fritadeira-air-fryer-45l-widemax-com-interior-de-aluminio-1500w-midea/p/MLB51032488");
   assert.equal(offers[1].paymentMethod, "no Pix");
 });

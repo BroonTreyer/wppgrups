@@ -31,6 +31,6 @@ test("preserva o link do painel de afiliados e converte a imagem para jpg", asyn
   const result = await service.preview({ url: "https://meli.la/2ZDo3VH" });
   assert.equal(result.affiliateUrl, "https://meli.la/2ZDo3VH");
   assert.equal(result.title, "Ar Condicionado Elgin 9000 Btus");
-  assert.equal(result.imageUrl, "https://http2.mlstatic.com/D_NQ_NP_953350-MLA108032205437_032026-O.jpg");
+  assert.equal(result.imageUrl, "https://http2.mlstatic.com/D_Q_NP_953350-MLA108032205437_032026-O.jpg");
   assert.equal(result.marketplace, "Mercado Livre");
 });

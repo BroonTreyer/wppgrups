@@ -96,9 +96,19 @@ const productUrl = (metadata) => {
   return url.toString();
 };
 
+/**
+ * Imagem do produto, QUADRADA.
+ *
+ * O prefixo do mlstatic define o enquadramento: `D_NQ_NP_` devolve a proporcao
+ * original (a do exemplo veio 837x1000, retrato) e `D_Q_NP_` devolve quadrada,
+ * completando as bordas. Importa porque o WhatsApp ajusta a imagem pela LARGURA
+ * da conversa: uma retrato de 837x1000 ocupa 1,19x a largura em altura, uma
+ * quadrada ocupa 1x. Trocar a resolucao nao mudaria nada — o que manda e a
+ * proporcao. `2X` mantem 1000px de lado, nitido em tela de celular.
+ */
 const imageUrl = (card) => {
   const pictureId = card.pictures?.pictures?.[0]?.id;
-  return pictureId ? `${IMAGE_BASE}/D_NQ_NP_2X_${encodeURIComponent(pictureId)}-O.jpg` : null;
+  return pictureId ? `${IMAGE_BASE}/D_Q_NP_2X_${encodeURIComponent(pictureId)}-O.jpg` : null;
 };
 
 export function normalizeCard(card) {

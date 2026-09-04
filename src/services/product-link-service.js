@@ -25,9 +25,16 @@ const meta = (html, name) => [
   new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${name}["']`, "i")
 ].map((pattern) => html.match(pattern)?.[1]).find(Boolean) ?? null;
 
-const preferJpg = (url) => {
+// Duas correcoes na imagem do Mercado Livre, ambas para o WhatsApp:
+// jpg porque webp e tratado como figurinha em vez de foto; e quadrada
+// (`D_Q_NP_`) porque a proporcao original vem em retrato e o WhatsApp ajusta
+// pela largura da conversa, entao a retrato ocupa quase 20% mais altura.
+const paraWhatsApp = (url) => {
   if (!url || !url.includes("mlstatic.com")) return url;
-  return url.replace(/-[A-Z]+\.webp$/i, "-O.jpg").replace(/\.webp$/i, ".jpg");
+  return url
+    .replace(/-[A-Z]+\.webp$/i, "-O.jpg")
+    .replace(/\.webp$/i, ".jpg")
+    .replace("/D_NQ_NP_", "/D_Q_NP_");
 };
 
 const amazonTitle = (html) => html.match(/<[^>]+id=["']productTitle["'][^>]*>([\s\S]*?)<\//i)?.[1] ?? null;
@@ -62,7 +69,7 @@ export class ProductLinkService {
       title,
       affiliateUrl: source.toString(),
       resolvedUrl: finalUrl.toString(),
-      imageUrl: preferJpg(imageUrl),
+      imageUrl: paraWhatsApp(imageUrl),
       requiresReview: true
     };
   }
