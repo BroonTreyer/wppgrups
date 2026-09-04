@@ -23,7 +23,13 @@ export class PublicationService {
     const now = this.clock();
     const nicheIds = input.nicheIds?.length ? input.nicheIds : inferNiches(offer);
     const state = await this.store.read();
-    const evaluated = state.destinations.map((destination) => ({ destination, reason: this.blockReason({ destination, offer, nicheIds, publications: state.publications, now }) }));
+    // Com `destinationId`, publica so nele. E o que permite a selecao por destino:
+    // em vez de uma oferta ir para todos os canais que casam no mesmo minuto, cada
+    // canal recebe, na sua vez, a oferta escolhida para o publico dele.
+    const alvos = input.destinationId
+      ? state.destinations.filter((destination) => destination.id === input.destinationId)
+      : state.destinations;
+    const evaluated = alvos.map((destination) => ({ destination, reason: this.blockReason({ destination, offer, nicheIds, publications: state.publications, now }) }));
     const destinations = evaluated.filter((item) => item.reason === null).map((item) => item.destination);
     const blocked = evaluated
       .filter((item) => item.reason !== null && item.destination.active && item.destination.available !== false)
@@ -51,7 +57,10 @@ export class PublicationService {
         current.publications.push({
           id: crypto.randomUUID(), offerFingerprint: offerFingerprint(offer), productKey: productKey(offer), destinationId: result.destinationId,
           status: result.status, deliveryId: result.delivery?.messageId ?? result.delivery?.id ?? null,
-          error: result.error ?? null, createdAt: now.toISOString()
+          error: result.error ?? null, createdAt: now.toISOString(),
+          // Titulo e nichos ficam NA publicacao para a regra de variedade nao
+          // depender de cruzar com o historico de ofertas, que a retencao poda.
+          title: offer.title, nicheIds
         });
       }
     });

@@ -1,6 +1,7 @@
 import { minutesUntilExpiry, productKey, validateOffer } from "../domain/offer.js";
 import { inferNiches } from "../domain/niches.js";
 import { scoreOffer } from "../domain/scoring.js";
+import { scoreForDestination } from "../domain/targeting.js";
 
 export { scoreOffer };
 
@@ -42,6 +43,100 @@ export class QueueService {
   isWithinPublishingWindow(now = this.clock()) {
     const hour = Number(new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", hourCycle: "h23", timeZone: "America/Sao_Paulo" }).format(now));
     return hour >= this.config.scheduler.startHour && hour < this.config.scheduler.endHour;
+  }
+
+  /**
+   * O destino que deve receber agora, e a melhor oferta PARA ELE.
+   *
+   * Inverte o motor antigo, que escolhia a melhor oferta da fila e a mandava para
+   * todos os destinos que casassem, no mesmo minuto — quatro canais recebendo o
+   * mesmo produto as 01:56. Aqui a pergunta e por canal: de tudo que serve para
+   * este publico, o que e melhor para ele agora?
+   *
+   * A vez e de quem esta esperando ha mais tempo. Assim os canais se revezam
+   * sozinhos, sem precisar de rodizio explicito, e um canal com muita oferta
+   * disponivel nao monopoliza os ciclos.
+   */
+  async selectTarget() {
+    const now = this.clock();
+    const state = await this.store.read();
+    const prontos = state.queue.filter(
+      (entry) => entry.status === "queued" && (!entry.nextAttemptAt || new Date(entry.nextAttemptAt) <= now)
+    );
+    if (!prontos.length) return null;
+
+    const urgency = (entry) => {
+      const restam = minutesUntilExpiry(entry.offer, now);
+      return restam !== null && restam <= this.config.freshness.urgentMinutes ? restam : null;
+    };
+
+    const publicacoes = state.publications ?? [];
+    const ultimaPublicacao = (destinationId) => publicacoes
+      .filter((item) => (item.destinationId ?? item.groupId) === destinationId && item.status === "sent")
+      .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+    const candidatos = [];
+    for (const destination of state.destinations ?? []) {
+      const recentes = ultimaPublicacao(destination.id);
+      const elegiveis = prontos
+        // Onde a oferta ja foi entregue nao entra de novo. O `blockReason` tem o
+        // cooldown de republicacao, mas ele le o historico de publicacoes — que a
+        // retencao poda. O `deliveredTo` vive no proprio item e nao some antes dele.
+        .filter((entry) => !(entry.deliveredTo ?? []).includes(destination.id))
+        .map((entry) => ({
+          entry,
+          reason: this.publicationService.blockReason({
+            destination, offer: entry.offer, nicheIds: entry.nicheIds,
+            publications: publicacoes, now
+          })
+        }))
+        .filter((item) => item.reason === null)
+        .map(({ entry }) => ({
+          entry,
+          score: scoreForDestination(entry.offer, destination, { nicheIds: entry.nicheIds, recent: recentes }),
+          urgencia: urgency(entry)
+        }))
+        // Promocao prestes a acabar fura a fila mesmo com score menor: publicar
+        // depois que ela expirou nao vale nada, por melhor que fosse o produto.
+        .toSorted((a, b) => {
+          if (a.urgencia !== null && b.urgencia !== null) return a.urgencia - b.urgencia || b.score - a.score;
+          if (a.urgencia !== null) return -1;
+          if (b.urgencia !== null) return 1;
+          return b.score - a.score || a.entry.createdAt.localeCompare(b.entry.createdAt);
+        });
+      if (!elegiveis.length) continue;
+      const desde = recentes[0] ? now - new Date(recentes[0].createdAt) : Number.MAX_SAFE_INTEGER;
+      candidatos.push({ destination, ...elegiveis[0], esperaMs: desde });
+    }
+    if (!candidatos.length) return null;
+    // Quem espera ha mais tempo tem a vez; empate desfeito pelo score da oferta.
+    return candidatos.toSorted((a, b) => b.esperaMs - a.esperaMs || b.score - a.score)[0];
+  }
+
+  /**
+   * Nada pode sair agora: registra o porque e volta a tentar depois.
+   *
+   * Antes, "nenhum destino elegivel" so era descoberto DEPOIS de chamar o
+   * publish, que devolvia zero destinos. Com a selecao por destino isso e
+   * detectado antes — economiza a chamada, mas o motivo sumiria da tela se
+   * ninguem o gravasse. Sem `nextAttemptAt` o agendador ainda tentaria a cada
+   * ciclo, martelando a fila a cada poucos segundos.
+   */
+  async deferReady() {
+    const now = this.clock();
+    const proximaTentativa = new Date(now.getTime() + this.config.scheduler.retryDelayMinutes * 60_000).toISOString();
+    const adiados = await this.store.update((state) => {
+      let total = 0;
+      for (const item of state.queue) {
+        if (item.status !== "queued") continue;
+        if (item.nextAttemptAt && new Date(item.nextAttemptAt) > now) continue;
+        item.nextAttemptAt = proximaTentativa;
+        item.lastDeferredReason = "Nenhum destino elegivel neste momento";
+        total += 1;
+      }
+      return total;
+    });
+    return { processed: false, reason: adiados ? "no-destination" : "empty", deferred: adiados };
   }
 
   async selectCandidate() {
@@ -122,20 +217,24 @@ export class QueueService {
     let selectedItem = null;
     try {
       await this.expireOldItems();
-      let item = await this.selectCandidate();
-      if (!item) return { processed: false, reason: "empty" };
-      if (this.priceGuard && !this.priceGuard.isFresh(item, this.clock())) {
+      let target = await this.selectTarget();
+      if (!target) return this.deferReady();
+      if (this.priceGuard && !this.priceGuard.isFresh(target.entry, this.clock())) {
         await this.refreshQueue();
-        item = await this.selectCandidate();
-        if (!item) return { processed: false, reason: "empty" };
+        target = await this.selectTarget();
+        if (!target) return this.deferReady();
       }
+      const item = target.entry;
+      const destination = target.destination;
       selectedItem = item;
       await this.store.update((current) => {
         const selected = current.queue.find((entry) => entry.id === item.id);
         selected.status = "processing";
         selected.attempts += 1;
       });
-      const result = await this.publicationService.publish({ ...item.offer, nicheIds: item.nicheIds });
+      const result = await this.publicationService.publish({
+        ...item.offer, nicheIds: item.nicheIds, destinationId: destination.id
+      });
       await this.store.update((current) => {
         const selected = current.queue.find((entry) => entry.id === item.id);
         if (!result.matchedDestinations) {
@@ -143,11 +242,25 @@ export class QueueService {
           selected.attempts = Math.max(0, selected.attempts - 1);
           selected.nextAttemptAt = new Date(this.clock().getTime() + this.config.scheduler.retryDelayMinutes * 60_000).toISOString();
           selected.lastDeferredReason = "Nenhum destino elegivel neste momento";
-        } else if (result.deliveredDestinations === result.matchedDestinations) {
-          selected.status = "published";
+        } else if (result.deliveredDestinations) {
+          // A oferta foi para UM destino. Ela so encerra quando todos os canais
+          // do nicho dela ja receberam — ate la volta para a fila e sera
+          // reavaliada, em outro momento, pelo score do proximo canal. E isso
+          // que escalona a mesma oferta entre os canais em vez de dispara-la
+          // para todos no mesmo minuto.
+          selected.deliveredTo = [...new Set([...(selected.deliveredTo ?? []), destination.id])];
+          const faltam = current.destinations.filter((outro) =>
+            outro.active && outro.available !== false
+            && !selected.deliveredTo.includes(outro.id)
+            && (outro.nicheIds ?? []).some((id) => (selected.nicheIds ?? []).includes(id)));
+          selected.status = faltam.length ? "queued" : "published";
+          selected.attempts = 0;
           selected.nextAttemptAt = null;
+          selected.lastDeferredReason = faltam.length
+            ? `Publicado em ${destination.name || destination.id}; faltam ${faltam.length} canal(is)`
+            : null;
         } else {
-          selected.status = selected.attempts >= 3 ? (result.deliveredDestinations ? "partial" : "failed") : "queued";
+          selected.status = selected.attempts >= 3 ? "failed" : "queued";
           selected.nextAttemptAt = selected.status === "queued" ? new Date(this.clock().getTime() + this.config.scheduler.retryDelayMinutes * 60_000).toISOString() : null;
         }
         selected.lastAttemptAt = this.clock().toISOString();
