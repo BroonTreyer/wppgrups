@@ -198,3 +198,33 @@ test("descarta promocao que acaba antes de dar tempo de publicar", async () => {
   assert.equal(run.rejected, 1);
   assert.deepEqual(enqueued.map((offer) => offer.externalId), ["TEMPO"]);
 });
+
+test("a capacidade da fila acompanha a frota, nao o canal mais rapido", async () => {
+  // Com "uma oferta, um destino", cada canal consome ofertas proprias. Seis
+  // canais a 12 min pedem 30 por hora; o calculo antigo usava so o mais rapido
+  // e segurava a fila em 10 — a coleta varria centenas de produtos e aprovava um.
+  const store = new MemoryStore();
+  store.state.destinations = Array.from({ length: 6 }, (_, i) => ({
+    id: `d${i}`, active: true, maxDailyPosts: 70, minMinutesBetweenPosts: 12
+  }));
+  const { service } = build({ store });
+  const { capacity } = await service.queueRoom();
+  // 6 destinos x 5 posts/hora x 2h de horizonte.
+  assert.equal(capacity, 60, `esperava 60, veio ${capacity}`);
+});
+
+test("o teto diario ainda limita a capacidade", async () => {
+  const store = new MemoryStore();
+  store.state.destinations = [{ id: "d0", active: true, maxDailyPosts: 3, minMinutesBetweenPosts: 12 }];
+  const { service } = build({ store });
+  const { capacity } = await service.queueRoom();
+  // O horizonte daria 10, mas o destino so aceita 3 no dia.
+  assert.equal(capacity, 3, `esperava 3, veio ${capacity}`);
+});
+
+test("sem destino ativo a coleta nao e limitada por capacidade", async () => {
+  const { service } = build({ store: new MemoryStore() });
+  const { capacity, room } = await service.queueRoom();
+  assert.equal(capacity, 0);
+  assert.equal(room, Number.POSITIVE_INFINITY);
+});

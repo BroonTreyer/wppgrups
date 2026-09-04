@@ -143,8 +143,16 @@ export class IngestionService {
     const day = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(this.clock());
     const sentToday = state.publications.filter((item) => item.status === "sent" && new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date(item.createdAt)) === day);
     const dailyRoom = actives.reduce((total, destination) => total + Math.max(0, destination.maxDailyPosts - sentToday.filter((item) => (item.destinationId ?? item.groupId) === destination.id).length), 0);
-    const fastest = Math.max(1, Math.min(...actives.map((destination) => destination.minMinutesBetweenPosts || 1)));
-    const horizon = Math.ceil((60 / fastest) * this.config.freshness.queueHorizonHours);
+    // Vazao da FROTA, nao de um destino. O calculo antigo usava so o canal mais
+    // rapido — fazia sentido quando uma oferta ia para todos os destinos de uma
+    // vez, porque uma oferta ocupava um slot de todo mundo. Com a regra de "uma
+    // oferta, um destino", cada canal consome ofertas proprias: seis canais a 12
+    // min pedem 30 ofertas por hora, e o horizonte de um so canal segurava a fila
+    // em 10. A coleta varria 384 produtos e aprovava 1.
+    const porHora = actives.reduce(
+      (total, destination) => total + 60 / Math.max(1, destination.minMinutesBetweenPosts || 1), 0
+    );
+    const horizon = Math.ceil(porHora * this.config.freshness.queueHorizonHours);
     const capacity = Math.max(1, Math.min(horizon, dailyRoom));
     return { queued, capacity, room: Math.max(0, capacity - queued) };
   }
