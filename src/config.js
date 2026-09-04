@@ -14,6 +14,10 @@ export function loadConfig(env = process.env) {
     adminToken: env.ADMIN_TOKEN ?? "development-only-token",
     dataFile: env.DATA_FILE ?? new URL("../data/store.json", import.meta.url),
     dryRun: bool(env.DRY_RUN, true),
+    // Curva de cadencia por hora e dia da semana (src/domain/timing.js). Ligada,
+    // ela concentra os posts no pico e fecha a madrugada. Desligar (`false`) volta
+    // ao intervalo fixo — util para testar em volume fora do horario comercial.
+    timingCurve: bool(env.TIMING_CURVE, true),
     scheduler: {
       enabled: bool(env.SCHEDULER_ENABLED, true),
       intervalSeconds: int(env.SCHEDULER_INTERVAL_SECONDS, 60),

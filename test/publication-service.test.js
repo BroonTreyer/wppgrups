@@ -103,3 +103,54 @@ test("exige procura minima quando o destino pede", async () => {
   assert.equal(result.matchedDestinations, 0);
   assert.match(result.blocked[0].reason, /pouca procura/);
 });
+
+// --- curva de cadencia -------------------------------------------------------
+
+const naHora = (state, isoUtc, overrides = {}) => new PublicationService({
+  store: new MemoryStore(state),
+  zapi: { sendImage: async () => ({ messageId: "sent" }) },
+  config: { ...config, ...overrides },
+  clock: () => new Date(isoUtc)
+});
+
+test("madrugada nao publica, mesmo com tudo o mais liberado", async () => {
+  const estado = { destinations: [destination("g", ["electronics"])], publications: [], deliveryEvents: [], offers: [], queue: [] };
+  // 06:00 UTC = 03:00 em Brasilia.
+  const service = naHora(estado, "2026-09-02T06:00:00Z");
+  const motivo = service.blockReason({
+    destination: estado.destinations[0], offer: OFFER, nicheIds: ["electronics"], publications: [], now: new Date("2026-09-02T06:00:00Z")
+  });
+  assert.match(motivo, /horario de baixa/);
+});
+
+test("o intervalo estica na hora morna e encolhe no pico", () => {
+  const destino = destination("g", ["electronics"], { minMinutesBetweenPosts: 12 });
+  const estado = { destinations: [destino], publications: [], deliveryEvents: [], offers: [], queue: [] };
+  const publicacoes = (iso) => [{ destinationId: "g", status: "sent", createdAt: iso, title: "Outro", nicheIds: ["home"] }];
+
+  // 23:00 UTC = 20:00 BRT, pico: 12 min depois ja pode.
+  const pico = new Date("2026-09-02T23:13:00Z");
+  assert.equal(
+    naHora(estado, pico.toISOString()).blockReason({
+      destination: destino, offer: OFFER, nicheIds: ["electronics"],
+      publications: publicacoes("2026-09-02T23:00:00Z"), now: pico
+    }), null, "no pico o intervalo configurado basta");
+
+  // 18:00 UTC = 15:00 BRT, peso 0.6: os mesmos 13 min ainda nao liberam.
+  const morno = new Date("2026-09-02T18:13:00Z");
+  const motivo = naHora(estado, morno.toISOString()).blockReason({
+    destination: destino, offer: OFFER, nicheIds: ["electronics"],
+    publications: publicacoes("2026-09-02T18:00:00Z"), now: morno
+  });
+  assert.match(motivo, /aguardando o intervalo de 2\d min/, motivo);
+});
+
+test("com a curva desligada o intervalo volta a ser fixo", () => {
+  const destino = destination("g", ["electronics"], { minMinutesBetweenPosts: 12 });
+  const estado = { destinations: [destino], publications: [], deliveryEvents: [], offers: [], queue: [] };
+  const madrugada = new Date("2026-09-02T06:00:00Z");
+  const motivo = naHora(estado, madrugada.toISOString(), { timingCurve: false }).blockReason({
+    destination: destino, offer: OFFER, nicheIds: ["electronics"], publications: [], now: madrugada
+  });
+  assert.equal(motivo, null, "sem curva, a madrugada nao bloqueia");
+});

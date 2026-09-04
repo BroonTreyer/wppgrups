@@ -1,5 +1,6 @@
 import { discountPercentage, offerFingerprint, productKey, validateOffer } from "../domain/offer.js";
 import { inferNiches } from "../domain/niches.js";
+import { effectiveInterval, isDeadHour } from "../domain/timing.js";
 import { formatOfferCaption } from "../domain/message.js";
 import { isAttributedLink } from "../domain/affiliate.js";
 
@@ -85,10 +86,19 @@ export class PublicationService {
     const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(now);
     const dailyCount = destinationPosts.filter((item) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date(item.createdAt)) === today).length;
     if (dailyCount >= destination.maxDailyPosts) return `limite diario atingido (${dailyCount}/${destination.maxDailyPosts})`;
+    // O intervalo respira com a hora: encolhe no pico, estica em hora morna e
+    // fecha de madrugada. O teto diario acima continua valendo, entao isto
+    // redistribui o volume do dia — nao aumenta.
+    if (this.config.timingCurve !== false && isDeadHour(now)) {
+      return "horario de baixa: publicar de madrugada gasta oferta boa sem audiencia";
+    }
+    const intervalo = this.config.timingCurve === false
+      ? destination.minMinutesBetweenPosts
+      : effectiveInterval(destination.minMinutesBetweenPosts, now);
     const lastPost = destinationPosts.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-    if (lastPost && now - new Date(lastPost.createdAt) < minutes(destination.minMinutesBetweenPosts)) {
-      const releaseAt = new Date(new Date(lastPost.createdAt).getTime() + minutes(destination.minMinutesBetweenPosts));
-      return `aguardando o intervalo de ${destination.minMinutesBetweenPosts} min: liberado as ${releaseAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}`;
+    if (lastPost && now - new Date(lastPost.createdAt) < minutes(intervalo)) {
+      const releaseAt = new Date(new Date(lastPost.createdAt).getTime() + minutes(intervalo));
+      return `aguardando o intervalo de ${intervalo} min: liberado as ${releaseAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}`;
     }
     const key = productKey(offer);
     const cooldown = days(this.config.limits.republishCooldownDays);
