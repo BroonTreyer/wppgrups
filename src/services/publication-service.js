@@ -8,6 +8,19 @@ const days = (value) => value * 24 * 60 * 60 * 1000;
 const hours = (value) => value * 60 * 60 * 1000;
 const minutes = (value) => value * 60 * 1000;
 
+const semAcento = (texto) => String(texto ?? "").normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+
+// Casa palavra inteira (ou frase). Sem isto, "barba" bloquearia "Barbante" e
+// "sunga" nao pegaria "Sungas" — bloqueio errado e pior que bloqueio nenhum.
+const matchesTitle = (title, keyword) => {
+  const alvo = semAcento(keyword).trim();
+  if (!alvo) return false;
+  const texto = semAcento(title);
+  if (alvo.includes(" ")) return texto.includes(alvo);
+  return texto.split(/[^a-z0-9]+/).filter(Boolean)
+    .some((palavra) => palavra === alvo || (palavra.endsWith("s") ? palavra.slice(0, -1) : palavra) === alvo);
+};
+
 export class PublicationService {
   constructor({ store, zapi, config, clock = () => new Date() }) {
     this.store = store;
@@ -78,6 +91,13 @@ export class PublicationService {
     if (!Array.isArray(destination.nicheIds) || !destination.nicheIds.some((id) => nicheIds.includes(id))) {
       return `nicho nao combina (destino aceita ${(destination.nicheIds ?? []).join(", ")})`;
     }
+    // Publico do canal. O nicho diz o ASSUNTO ("beleza"), mas nao diz para quem:
+    // maquina de cortar cabelo, peruca, cabeca de manequim e tenis masculino sao
+    // todos "beleza" ou "moda" e nenhum serve a um canal feminino. A lista e por
+    // destino porque e decisao editorial de cada canal, nao regra do sistema.
+    const bloqueada = (destination.blockedKeywords ?? []).find((palavra) => matchesTitle(offer.title, palavra));
+    if (bloqueada) return `"${bloqueada}" nao combina com o publico deste canal`;
+
     const discount = discountPercentage(offer);
     if (discount < (destination.minDiscount ?? 0)) return `desconto de ${discount}% abaixo do minimo do destino (${destination.minDiscount}%)`;
     if (destination.maxPrice && offer.currentPrice > destination.maxPrice) return `R$ ${offer.currentPrice} passa do teto de R$ ${destination.maxPrice} deste destino`;

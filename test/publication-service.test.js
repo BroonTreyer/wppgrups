@@ -15,7 +15,7 @@ const build = (state, overrides = {}) => new PublicationService({
   store: new MemoryStore(state),
   zapi: { sendImage: async () => ({ messageId: "sent" }) },
   config: { ...config, ...overrides },
-  clock: () => new Date("2026-09-02T17:00:00Z")
+  clock: () => new Date("2026-09-02T16:00:00Z")
 });
 
 const destination = (id, nicheIds, extra = {}) => ({ id, name: id, type: "group", nicheIds, active: true, minDiscount: 0, maxDailyPosts: 12, minMinutesBetweenPosts: 0, ...extra });
@@ -79,7 +79,7 @@ test("bloqueia publicacao de oferta sem link de afiliado atribuido", async () =>
 
 test("guarda a chave do produto na publicacao", async () => {
   const store = new MemoryStore({ destinations: [destination("tv-group", ["electronics"])], publications: [], deliveryEvents: [], offers: [], queue: [] });
-  const service = new PublicationService({ store, zapi: { sendImage: async () => ({ messageId: "x" }) }, config, clock: () => new Date("2026-09-02T17:00:00Z") });
+  const service = new PublicationService({ store, zapi: { sendImage: async () => ({ messageId: "x" }) }, config, clock: () => new Date("2026-09-02T16:00:00Z") });
   await service.publish(OFFER);
   assert.equal(store.state.publications[0].productKey, "Marketplace Demo:demo-smart-tv-50");
 });
@@ -123,34 +123,70 @@ test("madrugada nao publica, mesmo com tudo o mais liberado", async () => {
   assert.match(motivo, /horario de baixa/);
 });
 
-test("o intervalo estica na hora morna e encolhe no pico", () => {
+test("dentro da rajada vale o intervalo do destino; fora, nada sai", () => {
   const destino = destination("g", ["electronics"], { minMinutesBetweenPosts: 12 });
   const estado = { destinations: [destino], publications: [], deliveryEvents: [], offers: [], queue: [] };
   const publicacoes = (iso) => [{ destinationId: "g", status: "sent", createdAt: iso, title: "Outro", nicheIds: ["home"] }];
-
-  // 23:00 UTC = 20:00 BRT, pico: 12 min depois ja pode.
-  const pico = new Date("2026-09-02T23:13:00Z");
-  assert.equal(
-    naHora(estado, pico.toISOString()).blockReason({
-      destination: destino, offer: OFFER, nicheIds: ["electronics"],
-      publications: publicacoes("2026-09-02T23:00:00Z"), now: pico
-    }), null, "no pico o intervalo configurado basta");
-
-  // 18:00 UTC = 15:00 BRT, peso 0.6: os mesmos 13 min ainda nao liberam.
-  const morno = new Date("2026-09-02T18:13:00Z");
-  const motivo = naHora(estado, morno.toISOString()).blockReason({
+  const motivo = (agoraIso, ultimaIso) => naHora(estado, agoraIso).blockReason({
     destination: destino, offer: OFFER, nicheIds: ["electronics"],
-    publications: publicacoes("2026-09-02T18:00:00Z"), now: morno
+    publications: publicacoes(ultimaIso), now: new Date(agoraIso)
   });
-  assert.match(motivo, /aguardando o intervalo de 2\d min/, motivo);
+
+  // 22:13 UTC = 19:13 BRT, rajada da noite: 13 min depois do ultimo, ja pode.
+  assert.equal(motivo("2026-09-02T22:13:00Z", "2026-09-02T22:00:00Z"), null);
+  // 22:05 UTC: ainda dentro dos 12 min.
+  assert.match(String(motivo("2026-09-02T22:05:00Z", "2026-09-02T22:00:00Z")), /aguardando o intervalo de 12 min/);
+  // 20:13 UTC = 17:13 BRT, fora de qualquer rajada.
+  assert.match(String(motivo("2026-09-02T20:13:00Z", "2026-09-02T20:00:00Z")), /horario de baixa|fora de rajada/);
 });
 
 test("com a curva desligada o intervalo volta a ser fixo", () => {
   const destino = destination("g", ["electronics"], { minMinutesBetweenPosts: 12 });
   const estado = { destinations: [destino], publications: [], deliveryEvents: [], offers: [], queue: [] };
-  const madrugada = new Date("2026-09-02T06:00:00Z");
+  const madrugada = new Date("2026-09-02T06:00:00Z"); // 3h BRT
   const motivo = naHora(estado, madrugada.toISOString(), { timingCurve: false }).blockReason({
     destination: destino, offer: OFFER, nicheIds: ["electronics"], publications: [], now: madrugada
   });
   assert.equal(motivo, null, "sem curva, a madrugada nao bloqueia");
+});
+
+test("o canal recusa o que nao serve ao publico dele", () => {
+  // O nicho diz o assunto, nao para quem. Maquina de cortar cabelo, peruca,
+  // cabeca de manequim e tenis masculino sao todos "beleza" ou "moda", e
+  // nenhum serve a um canal feminino.
+  const isa = destination("isa", ["beauty", "fashion"], {
+    blockedKeywords: ["masculino", "unissex", "peruca", "manequim", "maquina de cortar cabelo", "barba"]
+  });
+  const estado = { destinations: [isa], publications: [], deliveryEvents: [], offers: [], queue: [] };
+  const service = naHora(estado, "2026-09-02T16:00:00Z"); // 13h BRT, rajada
+  const recusa = (title, nicheIds) => service.blockReason({
+    destination: isa, offer: { ...OFFER, title }, nicheIds,
+    publications: [], now: new Date("2026-09-02T16:00:00Z")
+  });
+
+  for (const [titulo, nichos] of [
+    ["Maquina De Cortar Cabelo Profissional Barbeiro", ["beauty"]],
+    ["Cabeca Manequim Isopor Branco Suporte Perucas", ["beauty"]],
+    ["Tenis Aramis Masculino Casual Couro", ["fashion"]],
+    ["Moletom Canguru Liso Algodao Unissex", ["fashion"]]
+  ]) {
+    assert.match(String(recusa(titulo, nichos)), /publico deste canal/, titulo);
+  }
+
+  // E deixa passar o que e do publico.
+  assert.equal(recusa("Kerastase Nutritive Bain Satin 250ml", ["beauty"]), null);
+  assert.equal(recusa("Base Liquida Vult Cobertura Alta", ["beauty"]), null);
+});
+
+test("o bloqueio casa palavra inteira, nao pedaco", () => {
+  const isa = destination("isa", ["home"], { blockedKeywords: ["barba", "sunga"] });
+  const estado = { destinations: [isa], publications: [], deliveryEvents: [], offers: [], queue: [] };
+  const service = naHora(estado, "2026-09-02T16:00:00Z");
+  const motivo = (title) => service.blockReason({
+    destination: isa, offer: { ...OFFER, title }, nicheIds: ["home"],
+    publications: [], now: new Date("2026-09-02T16:00:00Z")
+  });
+  // "barbante" contem "barba" mas nao e produto de barba.
+  assert.equal(motivo("Barbante Colorido 200g Para Croche"), null);
+  assert.match(String(motivo("Kit 3 Sungas Masculinas")), /publico deste canal/);
 });
