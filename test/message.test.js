@@ -38,3 +38,19 @@ test("mostra a contagem regressiva quando a promocao esta acabando", () => {
   const tranquila = { ...SAMPLE_OFFER, expiresAt: new Date(agora.getTime() + 5 * 3600000).toISOString() };
   assert.match(formatOfferCaption(tranquila, agora, ["home"]), /Só até/);
 });
+
+test("o desconto nao apaga a identidade do post", () => {
+  // Um impermeabilizante com 55% saiu com a manchete "PRECO ABSURDO" num canal
+  // de achadinhos: o desconto trocava a manchete e o post perdia o assunto.
+  const oferta = { title: "Kerastase Nutritive Bain Satin 250ml", currentPrice: 90, originalPrice: 200, affiliateUrl: "https://meli.la/x" };
+  const texto = formatOfferCaption(oferta, new Date("2026-09-07T18:00:00Z"), ["beauty"]);
+  assert.match(texto.split("\n")[0], /ACHADINHO DE BELEZA/);
+  assert.match(texto, /PRECO ABSURDO|PREÇO ABSURDO/, "a enfase do desconto continua, na linha do preco");
+});
+
+test("desconto modesto usa a etiqueta discreta", () => {
+  const oferta = { title: "Perfume Malbec 100ml", currentPrice: 180, originalPrice: 220, affiliateUrl: "https://meli.la/y" };
+  const texto = formatOfferCaption(oferta, new Date("2026-09-07T18:00:00Z"), ["beauty"]);
+  assert.match(texto, /🏷️ 18% OFF/);
+  assert.ok(!/ABSURDO/.test(texto));
+});

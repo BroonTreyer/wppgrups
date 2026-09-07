@@ -83,3 +83,57 @@ test("perfume e reconhecido como beleza", () => {
   assert.ok(inferNiches({ title: "O Boticario Insensatez Deo Colonia 100ml" }).includes("beauty"));
   assert.ok(inferNiches({ title: "Perfume Malbec Eau De Parfum 100ml" }).includes("beauty"));
 });
+
+test("contexto veta o nicho que so parecia certo", () => {
+  // Todos vieram da auditoria de 07/09: estavam sendo publicados errado.
+  const casos = [
+    // "monitor" e informatica; "monitor de pressao" e saude.
+    ["Monitor De Pressao Arterial De Braco Comfort Hem-712", "health", "computing-gaming"],
+    ["Monitor Gamer LG Ultragear 24 180hz 1ms Full Hd", "computing-gaming", "health"],
+    // "manta" e cobertor; "manta liquida" e impermeabilizante de obra.
+    ["Manta Cobertor Casal Microfibra Toque Macio", "home", null],
+    // "colchao" e casa; "colchao antiescara" e equipamento hospitalar.
+    ["Colchao Antiescara Pneumatico De Ar Para Acamados", "health", "home"],
+    ["Colchao Casal Ortobom Physical D33", "home", "health"],
+    // "canguru" e carregador de bebe; "moletom canguru" e o bolso da blusa.
+    ["Moletom Canguru Liso Algodao Unissex Termico", "fashion", "kids"],
+    ["Canguru Sling Bebe Ergonomico Carregador", "kids", null]
+  ];
+  for (const [titulo, esperado, vetado] of casos) {
+    const nichos = inferNiches({ title: titulo });
+    assert.ok(nichos.includes(esperado), `${titulo} -> ${nichos.join(",")} (faltou ${esperado})`);
+    if (vetado) assert.ok(!nichos.includes(vetado), `${titulo} nao deveria cair em ${vetado}`);
+  }
+});
+
+test("produto de obra nao vira achadinho de casa", () => {
+  // Impermeabilizante de 18kg foi publicado num canal de achadinhos.
+  for (const titulo of ["Manta Liquida 18kg Para Uso Residencial E Comercial",
+                        "Argamassa Colante AC3 Interno 20kg",
+                        "Tinta Acrilica Fosca Branca 18 Litros"]) {
+    const nichos = inferNiches({ title: titulo }).filter((id) => id !== "general");
+    assert.deepEqual(nichos, [], `${titulo} -> ${nichos.join(",")}`);
+  }
+});
+
+test("a categoria do marketplace decide quando o titulo nao decide", () => {
+  const B = "Beleza e cuidado pessoal";
+  // Coletados na vitrine de beleza e classificados fora dela na auditoria de 07/09.
+  assert.equal(inferNiches({ title: "Mascara Medicube Facial Gel Colageno Salmon", category: B })[0], "beauty");
+  assert.equal(inferNiches({ title: "Poltrona Cadeira Reclinavel Hidraulica De Barbeiro", category: B })[0], "beauty");
+  assert.equal(inferNiches({ title: "Kit Manicure 3 Pcs Alicate De Cuticula", category: B })[0], "beauty");
+});
+
+test("a categoria nao atropela o titulo", () => {
+  // O ML lista papel higienico em beleza; o nucleo do titulo e mais especifico.
+  const nichos = inferNiches({ title: "Papel Higienico Supra Folha Tripla 24 Rolos", category: "Beleza e cuidado pessoal" });
+  assert.equal(nichos[0], "market");
+  // Ferramenta de verdade continua ferramenta, mesmo com o veto de manicure.
+  assert.deepEqual(inferNiches({ title: "Alicate Universal Isolado 1000v" }).filter((id) => id !== "general"), ["tools-auto"]);
+});
+
+test("marca multicategoria nao decide sozinha o nicho", () => {
+  // "philco" como palavra-chave de casa fazia a TV virar eletrodomestico. E "tv"
+  // tem 2 letras: o nucleo exigia 3 e deixava de fora a palavra que define o produto.
+  assert.equal(inferNiches({ title: "Smart Tv Philco 40 P40vik Led Roku" })[0], "electronics");
+});

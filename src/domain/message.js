@@ -17,11 +17,16 @@ const HEADLINES = {
   general: "🔥 ACHADINHO DO DIA"
 };
 
+// O desconto NAO troca mais a manchete. Antes, qualquer 50% virava "PRECO
+// ABSURDO" e apagava a identidade do post: um impermeabilizante de 18kg saiu
+// com essa chamada num canal de achadinhos. O desconto ja tem lugar proprio na
+// linha de "% OFF", e e la que a enfase entra.
 const headline = (offer, nicheIds = []) => {
-  if (discountPercentage(offer) >= 50) return "🚨 PREÇO ABSURDO";
   const niche = nicheIds.find((id) => id !== "general" && HEADLINES[id]);
   return HEADLINES[niche] ?? HEADLINES.general;
 };
+
+const HYPE_DISCOUNT = 50;
 
 export function formatOfferCaption(offer, now = new Date(), nicheIds = offer.nicheIds ?? []) {
   const discount = discountPercentage(offer);
@@ -29,7 +34,9 @@ export function formatOfferCaption(offer, now = new Date(), nicheIds = offer.nic
 
   if (offer.originalPrice) lines.push(`~${money.format(offer.originalPrice)}~`);
   lines.push(`💰 *${money.format(offer.currentPrice)}*${offer.paymentMethod ? ` ${offer.paymentMethod}` : ""}`);
-  if (discount) lines.push(`🏷️ ${discount}% OFF`);
+  if (discount) {
+    lines.push(discount >= HYPE_DISCOUNT ? `🚨 *${discount}% OFF* — PREÇO ABSURDO` : `🏷️ ${discount}% OFF`);
+  }
 
   const provas = [];
   if (offer.rating) provas.push(`⭐ ${offer.rating.toFixed(1)}`);
