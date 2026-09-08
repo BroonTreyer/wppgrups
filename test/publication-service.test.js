@@ -229,3 +229,36 @@ test("a exigencia so vale no nicho declarado", () => {
     nicheIds: ["beauty"], publications: [], now: new Date("2026-09-02T16:00:00Z")
   }), null);
 });
+
+test("nada da linha de terceira idade e enfermagem", () => {
+  // Pedido explicito do usuario. Doze destes estavam barrados apenas por FALTA
+  // de nicho — frageis: bastaria preencher uma lacuna de vocabulario para
+  // voltarem a passar. O bloqueio no destino e o que garante.
+  const isa = destination("isa", ["home", "health", "beauty", "kids"], {
+    blockedKeywords: ["idoso", "geriatrico", "andador", "muleta", "bengala",
+      "cadeira de rodas", "cadeira de banho", "antiescara", "acamado",
+      "incontinencia", "protese dentaria", "aparelho auditivo", "hospitalar"]
+  });
+  const estado = { destinations: [isa], publications: [], deliveryEvents: [], offers: [], queue: [] };
+  const service = naHora(estado, "2026-09-02T16:00:00Z");
+  const motivo = (title, nicheIds = ["health"]) => service.blockReason({
+    destination: isa, offer: { ...OFFER, title }, nicheIds,
+    publications: [], now: new Date("2026-09-02T16:00:00Z")
+  });
+
+  for (const titulo of [
+    "Cadeira De Banho Dobravel Higienica Rodas Sanitaria Idoso",
+    "Cadeira De Rodas Dobravel Aco Resistente 120kg",
+    "Colchao Antiescara Pneumatico Para Acamados",
+    "Andador Dobravel Aluminio Para Idosos 4 Rodas",
+    "Muleta Axilar Regulavel Aluminio Par",
+    "Absorvente Geriatrico Incontinencia Adulto",
+    "Aparelho Auditivo Recarregavel Amplificador Surdez"
+  ]) {
+    assert.match(String(motivo(titulo)), /publico deste canal/, titulo);
+  }
+
+  // Saude legitima para o publico do canal continua entrando.
+  assert.equal(motivo("Vitamina C 1000mg Com Zinco 120 Capsulas"), null);
+  assert.equal(motivo("Colageno Verisol Com Acido Hialuronico 180 Capsulas"), null);
+});
