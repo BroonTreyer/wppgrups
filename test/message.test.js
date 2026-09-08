@@ -21,13 +21,16 @@ test("nunca menciona comissao para o assinante", () => {
   assert.doesNotMatch(caption, /sujeito a alteracao/i);
 });
 
-test("troca a chamada conforme o nicho do destino", () => {
+test("so o canal masculino tem chamada de nicho", () => {
   assert.match(formatOfferCaption(SAMPLE_OFFER, agora, ["kids"]), /ACHADINHO PRA MAMÃE/);
-  // home, beauty, health e fashion caem na manchete geral de proposito.
-  for (const nicho of ["home", "beauty", "health", "fashion"]) {
-    assert.match(formatOfferCaption(SAMPLE_OFFER, agora, [nicho]), /ACHADINHO DO DIA/, nicho);
+  assert.match(formatOfferCaption(SAMPLE_OFFER, agora, ["electronics"]), /ACHADO TECH/);
+  // home, beauty, health e fashion publicam SEM manchete: a mensagem abre no
+  // nome do produto. Nao ha mais chamada geral.
+  for (const nicho of ["home", "beauty", "health", "fashion", "general"]) {
+    const texto = formatOfferCaption(SAMPLE_OFFER, agora, [nicho]);
+    assert.ok(!/ACHADINHO DO DIA/.test(texto), nicho);
+    assert.ok(texto.startsWith("*"), `${nicho}: deveria abrir no nome do produto`);
   }
-  assert.match(formatOfferCaption(SAMPLE_OFFER, agora, ["general"]), /ACHADINHO DO DIA/);
 });
 
 test("desconto agressivo vira manchete de urgencia", () => {
@@ -58,20 +61,25 @@ test("desconto modesto usa a etiqueta discreta", () => {
   assert.ok(!/ABSURDO/.test(texto));
 });
 
-test("o selo de logistica do ML nao vira argumento de venda", () => {
-  // "Enviado pelo FULL" aparecia em 961 ofertas e nao diz nada a quem le.
-  const semGratis = { title: "Perfume X", currentPrice: 100, originalPrice: 120, shipping: "Enviado pelo FULL", affiliateUrl: "https://meli.la/a" };
-  assert.ok(!/FULL/i.test(formatOfferCaption(semGratis, new Date(), ["beauty"])));
-  assert.ok(!/🚚/.test(formatOfferCaption(semGratis, new Date(), ["beauty"])));
-
-  // Frete gratis continua, porque e argumento de verdade.
-  const comGratis = { ...semGratis, shipping: "Frete grátis Enviado pelo FULL" };
-  const texto = formatOfferCaption(comGratis, new Date(), ["beauty"]);
-  assert.match(texto, /🚚 Frete grátis/);
-  assert.ok(!/FULL/i.test(texto));
+test("frete fica fora da mensagem", () => {
+  // O selo "Enviado pelo FULL" nao diz nada a quem le, e "frete gratis" muda
+  // por CEP e valor de carrinho: prometer na legenda o que a pagina pode
+  // desmentir custa confianca no canal.
+  for (const frete of ["Enviado pelo FULL", "Frete grátis Enviado pelo FULL", "Frete grátis"]) {
+    const texto = formatOfferCaption(
+      { title: "Perfume X", currentPrice: 100, originalPrice: 120, shipping: frete, affiliateUrl: "https://meli.la/a" },
+      new Date(), ["beauty"]
+    );
+    assert.ok(!/FULL/i.test(texto), frete);
+    assert.ok(!/🚚/.test(texto), frete);
+    assert.ok(!/[Ff]rete/.test(texto), frete);
+  }
 });
 
-test("os nichos do canal feminino usam a manchete geral", () => {
+test("sem manchete, a mensagem abre no nome do produto", () => {
   const oferta = { title: "Air Fryer 5L", currentPrice: 300, originalPrice: 340, affiliateUrl: "https://meli.la/b" };
-  assert.match(formatOfferCaption(oferta, new Date(), ["home"]).split("\n")[0], /ACHADINHO DO DIA/);
+  for (const n of ["home", "beauty", "health", "fashion"]) {
+    const [primeira] = formatOfferCaption(oferta, new Date(), [n]).split(/\r?\n/);
+    assert.equal(primeira, "*Air Fryer 5L*", n);
+  }
 });

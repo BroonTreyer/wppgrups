@@ -12,8 +12,9 @@ const HEADLINES = {
   "computing-gaming": "💻 ACHADO GAMER",
   "tools-auto": "🔧 ACHADO DE FERRAMENTA",
   sports: "🏋️ ACHADO FITNESS",
-  market: "🛒 ACHADO DE MERCADO",
-  general: "🔥 ACHADINHO DO DIA"
+  market: "🛒 ACHADO DE MERCADO"
+  // Sem chamada geral: nicho sem manchete propria publica SEM manchete, e a
+  // mensagem abre direto no nome do produto.
 };
 
 // O desconto NAO troca mais a manchete. Antes, qualquer 50% virava "PRECO
@@ -22,14 +23,16 @@ const HEADLINES = {
 // linha de "% OFF", e e la que a enfase entra.
 const headline = (offer, nicheIds = []) => {
   const niche = nicheIds.find((id) => id !== "general" && HEADLINES[id]);
-  return HEADLINES[niche] ?? HEADLINES.general;
+  return HEADLINES[niche] ?? null;
 };
 
 const HYPE_DISCOUNT = 50;
 
 export function formatOfferCaption(offer, now = new Date(), nicheIds = offer.nicheIds ?? []) {
   const discount = discountPercentage(offer);
-  const lines = [headline(offer, nicheIds), "", `*${offer.title}*`, ""];
+  const chamada = headline(offer, nicheIds);
+  // Sem manchete, a mensagem abre no nome do produto — nao numa linha em branco.
+  const lines = chamada ? [chamada, "", `*${offer.title}*`, ""] : [`*${offer.title}*`, ""];
 
   if (offer.originalPrice) lines.push(`~${money.format(offer.originalPrice)}~`);
   lines.push(`💰 *${money.format(offer.currentPrice)}*${offer.paymentMethod ? ` ${offer.paymentMethod}` : ""}`);
@@ -41,10 +44,9 @@ export function formatOfferCaption(offer, now = new Date(), nicheIds = offer.nic
   if (offer.rating) provas.push(`⭐ ${offer.rating.toFixed(1)}`);
   const social = offer.reviewCount ? `${offer.reviewCount} avaliações` : offer.soldLabel;
   if (social) provas.push(social);
-  // So mostra frete quando ele e um ARGUMENTO de venda. "Enviado pelo FULL" e o
-  // selo de logistica do Mercado Livre: nao diz nada a quem le no WhatsApp e
-  // ainda ocupa a linha da prova social.
-  if (offer.shipping?.toLowerCase().includes("gr")) provas.push("🚚 Frete grátis");
+  // Frete fica FORA da mensagem. O selo do Mercado Livre ("Enviado pelo FULL")
+  // nao diz nada a quem le, e "frete gratis" muda por CEP e valor de carrinho:
+  // prometer na legenda o que a pagina pode desmentir custa confianca no canal.
   if (provas.length) lines.push("", provas.join("  ·  "));
 
   const restam = minutesUntilExpiry(offer, now);
