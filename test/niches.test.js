@@ -137,3 +137,38 @@ test("marca multicategoria nao decide sozinha o nicho", () => {
   // tem 2 letras: o nucleo exigia 3 e deixava de fora a palavra que define o produto.
   assert.equal(inferNiches({ title: "Smart Tv Philco 40 P40vik Led Roku" })[0], "electronics");
 });
+
+test("auditoria 07/09: nada de material medico, comercial, pet ou obra", () => {
+  // Cada um destes chegou a um canal de achadinhos, ou chegaria.
+  const forade = [
+    "Balanca De Plataforma Digital 200kg Com Coluna",
+    "Brightpet Probioticos Para Caes Flora Intestinal",
+    "Auto transformador bivolt 110v 220v Techmax 7000VA ar condicionado",
+    "Manta Liquida 18kg Para Uso Residencial",
+    "Argamassa Colante AC3 Interno 20kg"
+  ];
+  for (const titulo of forade) {
+    const nichos = inferNiches({ title: titulo }).filter((id) => id !== "general");
+    assert.deepEqual(nichos, [], `${titulo} -> ${nichos.join(",")}`);
+  }
+  // E o legitimo continua passando.
+  assert.ok(inferNiches({ title: "Balanca Digital Corporal Bioimpedancia Relaxmedic" }).includes("health"));
+  assert.ok(inferNiches({ title: "Ar Condicionado Split LG Inverter 12000 Btu" }).includes("home"));
+});
+
+test("lavar roupa nao e comprar roupa", () => {
+  // Moda casava com lavadora, tanquinho e tabua de passar por "roupa".
+  for (const titulo of ["Lavadora de roupas Electrolux Efficient 18kg",
+                        "Tanquinho De Lavar Roupa Mueller 20 Kg",
+                        "Tabua De Passar Roupa Reforcada",
+                        "Sapateira Organizador De Sapatos 7 Prateleiras"]) {
+    const nichos = inferNiches({ title: titulo }).filter((id) => id !== "general");
+    assert.ok(nichos.includes("home"), `${titulo} -> ${nichos.join(",")}`);
+    assert.ok(!nichos.includes("fashion"), `${titulo} nao e moda`);
+  }
+});
+
+test("body de bebe e body spray de perfumaria sao coisas diferentes", () => {
+  assert.ok(inferNiches({ title: "Body Spray Carolina Herrera 212 Vip Rose Feminino 250ml" }).includes("beauty"));
+  assert.ok(inferNiches({ title: "Body Bebe Manga Longa Algodao Menino" }).includes("kids"));
+});

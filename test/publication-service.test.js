@@ -190,3 +190,42 @@ test("o bloqueio casa palavra inteira, nao pedaco", () => {
   assert.equal(motivo("Barbante Colorido 200g Para Croche"), null);
   assert.match(String(motivo("Kit 3 Sungas Masculinas")), /publico deste canal/);
 });
+
+test("em roupa e calcado o canal exige marcacao feminina", () => {
+  // Bloquear marca masculina uma a uma e enxugar gelo: nenhum destes diz
+  // "masculino", e todos chegaram ao canal.
+  const isa = destination("isa", ["fashion"], {
+    requireAnyByNiche: { fashion: ["feminino", "feminina", "vestido", "calcinha", "sandalia"] }
+  });
+  const estado = { destinations: [isa], publications: [], deliveryEvents: [], offers: [], queue: [] };
+  const service = naHora(estado, "2026-09-02T16:00:00Z");
+  const motivo = (title) => service.blockReason({
+    destination: isa, offer: { ...OFFER, title }, nicheIds: ["fashion"],
+    publications: [], now: new Date("2026-09-02T16:00:00Z")
+  });
+
+  for (const titulo of ["Kit Camisetas Aramis Preta Branca Original",
+                        "Tenis Reserva Go Troy Leve Confortavel",
+                        "Tenis Smash V2 Puma Preto E Branco 41 Br",
+                        "Mochila Tatica Impermeavel Militar Reforcada"]) {
+    assert.match(String(motivo(titulo)), /marcacao de publico/, titulo);
+  }
+  for (const titulo of ["Tenis Feminino Vizzano Branco Casual",
+                        "Calca Jeans Feminina Cos Alto",
+                        "Sandalia Rasterinha Confortavel"]) {
+    assert.equal(motivo(titulo), null, titulo);
+  }
+});
+
+test("a exigencia so vale no nicho declarado", () => {
+  const isa = destination("isa", ["fashion", "beauty"], {
+    requireAnyByNiche: { fashion: ["feminino"] }
+  });
+  const estado = { destinations: [isa], publications: [], deliveryEvents: [], offers: [], queue: [] };
+  const service = naHora(estado, "2026-09-02T16:00:00Z");
+  // Beleza nao exige a marcacao: shampoo nao e peca de vestuario.
+  assert.equal(service.blockReason({
+    destination: isa, offer: { ...OFFER, title: "Kerastase Nutritive Bain Satin 250ml" },
+    nicheIds: ["beauty"], publications: [], now: new Date("2026-09-02T16:00:00Z")
+  }), null);
+});

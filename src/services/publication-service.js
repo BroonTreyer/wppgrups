@@ -98,6 +98,19 @@ export class PublicationService {
     const bloqueada = (destination.blockedKeywords ?? []).find((palavra) => matchesTitle(offer.title, palavra));
     if (bloqueada) return `"${bloqueada}" nao combina com o publico deste canal`;
 
+    // Exigencia POSITIVA por nicho. Bloquear marca masculina uma a uma e enxugar
+    // gelo: "Kit Camisetas Aramis", "Tenis Reserva Go Troy" e "Tenis Smash V2 41
+    // Br" nao dizem "masculino" em lugar nenhum. Em roupa e calcado a marcacao de
+    // genero e a regra do mercado — quando ela FALTA, quase sempre e peca
+    // masculina ou unissex. Entao o canal exige o sinal feminino nesses nichos,
+    // em vez de tentar adivinhar o masculino.
+    for (const [nicho, exigidas] of Object.entries(destination.requireAnyByNiche ?? {})) {
+      if (!nicheIds.includes(nicho)) continue;
+      if (!exigidas.some((palavra) => matchesTitle(offer.title, palavra))) {
+        return `${nicho}: falta a marcacao de publico que este canal exige`;
+      }
+    }
+
     const discount = discountPercentage(offer);
     if (discount < (destination.minDiscount ?? 0)) return `desconto de ${discount}% abaixo do minimo do destino (${destination.minDiscount}%)`;
     if (destination.maxPrice && offer.currentPrice > destination.maxPrice) return `R$ ${offer.currentPrice} passa do teto de R$ ${destination.maxPrice} deste destino`;
