@@ -136,8 +136,9 @@ test("dentro da rajada vale o intervalo do destino; fora, nada sai", () => {
   assert.equal(motivo("2026-09-02T22:13:00Z", "2026-09-02T22:00:00Z"), null);
   // 22:05 UTC: ainda dentro dos 12 min.
   assert.match(String(motivo("2026-09-02T22:05:00Z", "2026-09-02T22:00:00Z")), /aguardando o intervalo de 12 min/);
-  // 20:13 UTC = 17:13 BRT, fora de qualquer rajada.
-  assert.match(String(motivo("2026-09-02T20:13:00Z", "2026-09-02T20:00:00Z")), /horario de baixa|fora de rajada/);
+  // 21:13 UTC = 18:13 BRT: silencio entre a ultima rajada da tarde e a
+  // primeira da noite. As horas sem janela sao 0-5, 7, 10, 12, 15, 18 e 21.
+  assert.match(String(motivo("2026-09-02T21:13:00Z", "2026-09-02T21:00:00Z")), /horario de baixa|fora de rajada/);
 });
 
 test("com a curva desligada o intervalo volta a ser fixo", () => {

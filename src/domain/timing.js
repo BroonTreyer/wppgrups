@@ -19,15 +19,23 @@
 
 const FUSO = "America/Sao_Paulo";
 
-// Seis janelas de uma hora. Manha: antes do trabalho e meio da manha. Tarde:
-// pos-almoco e fim de expediente. Noite: depois do jantar e antes de dormir.
+// Doze janelas de uma hora, das 6h as 23h: quatro de manha, quatro a tarde,
+// quatro a noite. Espalhadas dentro de cada periodo para nao empilhar dois
+// disparos seguidos — entre uma janela e a proxima ha pelo menos uma hora de
+// silencio, que e o que separa "canal ativo" de "canal que so despeja".
 export const BURST_WINDOWS = [
-  { hora: 8, rotulo: "manha-1" },
-  { hora: 10, rotulo: "manha-2" },
+  { hora: 6, rotulo: "manha-1" },
+  { hora: 8, rotulo: "manha-2" },
+  { hora: 9, rotulo: "manha-3" },
+  { hora: 11, rotulo: "manha-4" },
   { hora: 13, rotulo: "tarde-1" },
-  { hora: 16, rotulo: "tarde-2" },
+  { hora: 14, rotulo: "tarde-2" },
+  { hora: 16, rotulo: "tarde-3" },
+  { hora: 17, rotulo: "tarde-4" },
   { hora: 19, rotulo: "noite-1" },
-  { hora: 21, rotulo: "noite-2" }
+  { hora: 20, rotulo: "noite-2" },
+  { hora: 22, rotulo: "noite-3" },
+  { hora: 23, rotulo: "noite-4" }
 ];
 
 const partes = (date) => {
