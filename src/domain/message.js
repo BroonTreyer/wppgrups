@@ -5,10 +5,9 @@ const hour = (value) => new Date(value).toLocaleTimeString("pt-BR", { hour: "2-d
 
 const HEADLINES = {
   kids: "👶 ACHADINHO PRA MAMÃE",
-  home: "🏠 ACHADINHO PRA CASA",
-  beauty: "💄 ACHADINHO DE BELEZA",
-  health: "💚 ACHADINHO DE BEM-ESTAR",
-  fashion: "👗 ACHADINHO DE MODA",
+  // `home`, `beauty`, `health` e `fashion` saem de proposito: caem na manchete
+  // geral. Rotular a oferta pelo nicho dizia menos que a chamada generica e
+  // ainda arriscava anunciar o produto errado quando a classificacao escorrega.
   electronics: "📱 ACHADO TECH",
   "computing-gaming": "💻 ACHADO GAMER",
   "tools-auto": "🔧 ACHADO DE FERRAMENTA",
@@ -42,7 +41,10 @@ export function formatOfferCaption(offer, now = new Date(), nicheIds = offer.nic
   if (offer.rating) provas.push(`⭐ ${offer.rating.toFixed(1)}`);
   const social = offer.reviewCount ? `${offer.reviewCount} avaliações` : offer.soldLabel;
   if (social) provas.push(social);
-  if (offer.shipping) provas.push(offer.shipping.toLowerCase().includes("gr") ? "🚚 Frete grátis" : `🚚 ${offer.shipping}`);
+  // So mostra frete quando ele e um ARGUMENTO de venda. "Enviado pelo FULL" e o
+  // selo de logistica do Mercado Livre: nao diz nada a quem le no WhatsApp e
+  // ainda ocupa a linha da prova social.
+  if (offer.shipping?.toLowerCase().includes("gr")) provas.push("🚚 Frete grátis");
   if (provas.length) lines.push("", provas.join("  ·  "));
 
   const restam = minutesUntilExpiry(offer, now);
