@@ -172,3 +172,21 @@ test("body de bebe e body spray de perfumaria sao coisas diferentes", () => {
   assert.ok(inferNiches({ title: "Body Spray Carolina Herrera 212 Vip Rose Feminino 250ml" }).includes("beauty"));
   assert.ok(inferNiches({ title: "Body Bebe Manga Longa Algodao Menino" }).includes("kids"));
 });
+
+test("movel de setup nao e movel de casa", () => {
+  // "Escrivaninha Gamer Mesa Para Computador" saiu quatro vezes num canal
+  // feminino de achadinhos: "escrivaninha" e "mesa" estao no NUCLEO e venciam
+  // "computador", que aparece depois.
+  for (const titulo of ["Escrivaninha Gamer Mesa Para Computador Com Suporte Para Cpu Preto",
+                        "Cadeira Gamer ThunderX3 Reclinavel",
+                        "Mesa Gamer Com Suporte Para CPU e Headset"]) {
+    const nichos = inferNiches({ title: titulo }).filter((id) => id !== "general");
+    assert.ok(!nichos.includes("home"), `${titulo} -> ${nichos.join(",")}`);
+  }
+  // Movel comum de casa continua em casa.
+  for (const titulo of ["Escrivaninha Mesa De Estudos Branca 90cm",
+                        "Mesa De Jantar 6 Lugares Madeira",
+                        "Cadeira De Escritorio Ergonomica Apoio Lombar"]) {
+    assert.ok(inferNiches({ title: titulo }).includes("home"), titulo);
+  }
+});
