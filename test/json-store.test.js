@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile, stat } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { JsonStore } from "../src/infra/json-store.js";
 
 const newFile = async () => join(await mkdtemp(join(tmpdir(), "ofertaflow-store-")), "store.json");
@@ -89,4 +89,56 @@ test("remove arquivos temporarios abandonados", async () => {
   await writeFile(`${file}.99999.tmp`, "{}", "utf8");
   assert.equal(await store.cleanupTemporaryFiles(Date.now() + 3600000), 1);
   assert.equal(await store.cleanupTemporaryFiles(Date.now() + 3600000), 0);
+});
+
+test("guarda um backup a cada gravacao", async () => {
+  const file = await newFile();
+  const store = new JsonStore(file);
+  await store.update((state) => { state.queue.push({ id: "primeiro" }); });
+  await store.update((state) => { state.queue.push({ id: "segundo" }); });
+  assert.deepEqual(JSON.parse(await readFile(`${file}.bak`, "utf8")).queue, [{ id: "primeiro" }]);
+  assert.equal(JSON.parse(await readFile(file, "utf8")).queue.length, 2);
+});
+
+test("restaura do backup quando o arquivo principal vira NUL", async () => {
+  const file = await newFile();
+  const primeiro = new JsonStore(file);
+  await primeiro.update((state) => { state.queue.push({ id: "sobrevivente" }); });
+  await primeiro.update((state) => { state.destinations.push({ id: "canal" }); });
+
+  // Assinatura de queda de energia no Windows: tamanho certo, conteudo zerado.
+  const tamanho = (await stat(file)).size;
+  await writeFile(file, Buffer.alloc(tamanho));
+
+  const avisos = [];
+  const segundo = new JsonStore(file, { onRecovery: (mensagem) => { avisos.push(mensagem); } });
+  const state = await segundo.read();
+  assert.deepEqual(state.queue, [{ id: "sobrevivente" }]);
+  assert.equal(avisos.length, 1);
+  assert.match(avisos[0], /restaurado do backup/);
+});
+
+test("poe o arquivo corrompido de quarentena em vez de sobrescrever", async () => {
+  const file = await newFile();
+  await writeFile(file, "{ isso nao e json", "utf8");
+  const avisos = [];
+  const store = new JsonStore(file, { onRecovery: (mensagem) => { avisos.push(mensagem); } });
+
+  assert.deepEqual((await store.read()).queue, []);
+  const restos = await readdir(dirname(file));
+  const quarentena = restos.find((nome) => nome.includes(".corrompido-"));
+  assert.ok(quarentena, "o arquivo corrompido precisa continuar no disco");
+  assert.equal(await readFile(join(dirname(file), quarentena), "utf8"), "{ isso nao e json");
+  assert.match(avisos[0], /sem backup/);
+});
+
+test("usa o backup quando o arquivo principal some", async () => {
+  const file = await newFile();
+  const primeiro = new JsonStore(file);
+  await primeiro.update((state) => { state.queue.push({ id: "a" }); });
+  await primeiro.update((state) => { state.queue.push({ id: "b" }); });
+  await rm(file);
+
+  const segundo = new JsonStore(file, { onRecovery: () => {} });
+  assert.deepEqual((await segundo.read()).queue, [{ id: "a" }]);
 });

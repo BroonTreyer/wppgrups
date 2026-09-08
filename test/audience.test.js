@@ -1,0 +1,92 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { ACHADINHOS_PRESET } from "../src/domain/audience.js";
+import { PublicationService } from "../src/services/publication-service.js";
+
+const AGORA = new Date("2026-09-02T16:00:00Z"); // 13h BRT, dentro de uma rajada
+const OFFER = { id: "o1", title: "", currentPrice: 99, originalPrice: 199, soldCount: 900, url: "https://x", affiliateUrl: "https://x?matt_word=rocketplugins" };
+
+const canal = {
+  id: "isa", name: "Achadinhos", type: "channel", active: true, available: true,
+  nicheIds: ["home", "beauty", "health", "fashion", "kids"],
+  maxDailyPosts: 40, minMinutesBetweenPosts: 20, minDiscount: 5,
+  ...ACHADINHOS_PRESET
+};
+
+const service = new PublicationService({
+  store: { read: async () => ({ destinations: [canal], publications: [], deliveryEvents: [], offers: [], queue: [] }) },
+  zapi: {}, config: { limits: {} }, clock: () => AGORA
+});
+
+const motivo = (title, nicheIds) => service.blockReason({
+  destination: canal, offer: { ...OFFER, title }, nicheIds, publications: [], now: AGORA
+});
+
+test("o preset barra o que nao e do publico do canal", () => {
+  for (const [titulo, nichos] of [
+    ["Maquina De Cortar Cabelo Profissional Barbeiro", ["beauty"]],
+    ["Cabeca Manequim Isopor Suporte Para Perucas", ["beauty"]],
+    ["Kit 3 Sungas Masculinas Praia", ["fashion"]],
+    ["Moletom Canguru Liso Algodao Unissex", ["fashion"]],
+    ["Cadeira De Rodas Dobravel Aco 120kg", ["health"]],
+    ["Colchao Antiescara Pneumatico Para Acamados", ["home"]],
+    ["Andador Dobravel Aluminio 4 Rodas", ["health"]],
+    ["Absorvente Geriatrico Incontinencia Adulto", ["health"]],
+    ["Aparelho Auditivo Recarregavel Amplificador", ["health"]],
+    ["Kit 100 Seringas Descartaveis 5ml", ["health"]],
+    ["Estufa De Salgados Eletrica 3 Andares", ["home"]],
+    ["Fritadeira Industrial Eletrica 8 Litros", ["home"]],
+    ["Racao Premium Para Cachorro Adulto 15kg", ["home"]],
+    ["Arranhador Para Gato Com Casinha", ["home"]]
+  ]) {
+    assert.match(String(motivo(titulo, nichos)), /publico deste canal/, titulo);
+  }
+});
+
+test("o preset deixa passar o que e do publico", () => {
+  for (const [titulo, nichos] of [
+    ["Kerastase Nutritive Bain Satin 250ml", ["beauty"]],
+    ["Base Liquida Vult Cobertura Alta", ["beauty"]],
+    ["Vitamina C 1000mg Com Zinco 120 Capsulas", ["health"]],
+    ["Colageno Verisol Com Acido Hialuronico 180 Capsulas", ["health"]],
+    ["Jogo De Panelas Antiaderente 5 Pecas", ["home"]],
+    ["Vestido Midi Floral Manga Bufante", ["fashion"]],
+    ["Sandalia Rasteirinha Confortavel Nude", ["fashion"]]
+  ]) {
+    assert.equal(motivo(titulo, nichos), null, titulo);
+  }
+});
+
+test("bloqueio errado e pior que bloqueio nenhum: nada de casar pedaco de palavra", () => {
+  // Cada um destes contem uma palavra bloqueada como SUBSTRING e precisa passar.
+  for (const [titulo, nichos] of [
+    ["Barbante Colorido 200g Para Croche", ["home"]],       // barba
+    ["Garrafa Pet 2 Litros Kit 10 Unidades", ["home"]],     // pet shop
+    ["Kit 6 Potes Hermeticos Empilhaveis", ["home"]],       // pote / pos barba
+    ["Sabonete Liquido Intimo 200ml", ["beauty"]],          // sonda? nao: guarda geral
+    ["Manta Solteiro Microfibra Antialergica", ["home"]]
+  ]) {
+    assert.equal(motivo(titulo, nichos), null, titulo);
+  }
+});
+
+test("em vestuario o canal exige a marcacao feminina", () => {
+  for (const titulo of [
+    "Kit Camisetas Aramis Preta Branca Original",
+    "Tenis Reserva Go Troy Leve Confortavel",
+    "Tenis Smash V2 Puma Preto E Branco 41 Br",
+    "Mochila Tatica Impermeavel Militar Reforcada"
+  ]) {
+    assert.match(String(motivo(titulo, ["fashion"])), /marcacao de publico/, titulo);
+  }
+  // ... e a exigencia nao vaza para fora de vestuario.
+  assert.equal(motivo("Kerastase Nutritive Bain Satin 250ml", ["beauty"]), null);
+});
+
+test("o teto de preco do canal barra o eletrodomestico caro por regra", () => {
+  const caro = service.blockReason({
+    destination: canal, offer: { ...OFFER, title: "Air Fryer Digital 12 Litros", currentPrice: 620, originalPrice: 900 },
+    nicheIds: ["home"], publications: [], now: AGORA
+  });
+  assert.match(String(caro), /passa do teto/);
+});

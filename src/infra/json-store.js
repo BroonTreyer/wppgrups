@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -7,12 +7,15 @@ const RETRYABLE = new Set(["EPERM", "EACCES", "EBUSY", "ENOENT"]);
 const TEMP_MAX_AGE = 10 * 60 * 1000;
 const resolveFile = (value) => value instanceof URL ? fileURLToPath(value) : value;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const timestamp = () => new Date().toISOString().replace(/[:.]/g, "-");
 
 export class JsonStore {
-  constructor(file, { fs = { mkdir, readFile, readdir, rename, rm, stat, writeFile }, retries = 6 } = {}) {
+  constructor(file, { fs = { copyFile, mkdir, open, readFile, readdir, rename, rm, stat, writeFile }, retries = 6, onRecovery = null } = {}) {
     this.file = resolveFile(file);
+    this.backupFile = `${this.file}.bak`;
     this.fs = fs;
     this.retries = retries;
+    this.onRecovery = onRecovery;
     this.writeQueue = Promise.resolve();
     this.cache = null;
     this.lastMtime = null;
@@ -21,20 +24,53 @@ export class JsonStore {
   async load() {
     const current = await this.fs.stat(this.file).catch(() => null);
     if (this.cache && current && current.mtimeMs === this.lastMtime) return this.cache;
+    const primary = await this.readState(this.file);
+    if (primary.ok) {
+      this.cache = primary.state;
+      this.lastMtime = current?.mtimeMs ?? null;
+      return this.cache;
+    }
+    if (primary.missing) {
+      // Sem arquivo principal: o backup ainda pode ter a ultima gravacao boa.
+      const backup = await this.readState(this.backupFile);
+      this.cache = backup.ok ? backup.state : structuredClone(INITIAL_STATE);
+      if (backup.ok) await this.recover("arquivo principal ausente; estado restaurado do backup");
+      this.lastMtime = null;
+      return this.cache;
+    }
+    return this.recoverCorrupted(primary.error);
+  }
+
+  // Arquivo existe mas nao e JSON valido — desligamento no meio da gravacao deixa
+  // exatamente isso (no Windows, um arquivo do tamanho certo cheio de NUL).
+  async recoverCorrupted(error) {
+    const backup = await this.readState(this.backupFile);
+    const quarantine = `${this.file}.corrompido-${timestamp()}`;
+    await this.fs.rename(this.file, quarantine).catch(() => {});
+    this.cache = backup.ok ? backup.state : structuredClone(INITIAL_STATE);
+    this.lastMtime = null;
+    await this.recover(backup.ok
+      ? `arquivo corrompido (${error.message}) movido para ${basename(quarantine)}; estado restaurado do backup`
+      : `arquivo corrompido (${error.message}) movido para ${basename(quarantine)}; sem backup, comecando vazio`);
+    return this.cache;
+  }
+
+  async readState(file) {
     try {
-      const parsed = JSON.parse(await this.fs.readFile(this.file, "utf8"));
+      const parsed = JSON.parse(await this.fs.readFile(file, "utf8"));
       const state = { ...structuredClone(INITIAL_STATE), ...parsed };
       if (!state.destinations.length && parsed.groups?.length) {
         state.destinations = parsed.groups.map((group) => ({ ...group, type: "group" }));
       }
-      this.cache = state;
-      this.lastMtime = current?.mtimeMs ?? null;
+      return { ok: true, state };
     } catch (error) {
-      if (error.code !== "ENOENT") throw error;
-      this.cache = structuredClone(INITIAL_STATE);
-      this.lastMtime = null;
+      return { ok: false, missing: error.code === "ENOENT", error };
     }
-    return this.cache;
+  }
+
+  async recover(message) {
+    if (this.onRecovery) await this.onRecovery(message);
+    else console.error(`[store] ${message}`);
   }
 
   async read() {
@@ -57,6 +93,8 @@ export class JsonStore {
     await this.fs.mkdir(dirname(this.file), { recursive: true });
     const temp = `${this.file}.${process.pid}.tmp`;
     await this.fs.writeFile(temp, payload, "utf8");
+    await this.flush(temp);
+    await this.backup();
     for (let attempt = 0; attempt < this.retries; attempt += 1) {
       try {
         await this.fs.rename(temp, this.file);
@@ -72,6 +110,23 @@ export class JsonStore {
         await delay(20 * (attempt + 1));
       }
     }
+  }
+
+  // Sem isto o rename publica um nome novo apontando para dados que ainda estao
+  // no cache do sistema operacional: uma queda de energia perde o conteudo e deixa
+  // o arquivo do tamanho certo, so que vazio.
+  async flush(file) {
+    if (!this.fs.open) return;
+    const handle = await this.fs.open(file, "r+").catch(() => null);
+    if (!handle) return;
+    await handle.sync().catch(() => {});
+    await handle.close().catch(() => {});
+  }
+
+  // So copia o que ja foi lido com sucesso — nunca promove um arquivo corrompido a backup.
+  async backup() {
+    if (!this.fs.copyFile || !this.cache) return;
+    await this.fs.copyFile(this.file, this.backupFile).catch(() => {});
   }
 
   async stamp() {
