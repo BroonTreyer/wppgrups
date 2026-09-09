@@ -3,6 +3,11 @@
 work/
 outputs/
 data/*.json
+# O backup e a quarentena do store carregam os mesmos dados e nao terminam em
+# .json — por isso escaparam do padrao acima e um deles chegou a ser commitado.
+data/*.bak
+data/*.tmp
+data/*.corrompido-*
 !data/.gitkeep
 coverage/
 *.log
