@@ -33,7 +33,11 @@ COMO DECIDIR O NICHO
 2. A categoria informada pelo marketplace e um sinal forte, porque quem classificou
    foi o proprio site. Use quando o titulo nao decidir sozinho. Mas o titulo manda:
    "Papel Higienico" listado em beleza continua sendo mercado.
-3. No maximo dois nichos, o principal primeiro. Se nada servir, use general.
+3. No maximo dois nichos, o principal primeiro.
+4. "general" e exclusivo: use SOZINHO e so quando nenhum outro nicho servir. Nunca
+   junto com outro. Antes de recorrer a ele, procure de novo — "Barbante Para Croche"
+   e artesanato para a casa (home), "Racao Para Caes" e mercado (market). Quase tudo
+   que a vitrine lista cabe em algum nicho.
 
 COMO DECIDIR O PUBLICO (campo servePublico)
 
@@ -93,6 +97,15 @@ const descreve = (offer, numero) => {
   if (offer.category) linhas.push(`   categoria: ${offer.category}`);
   if (offer.currentPrice) linhas.push(`   preco: R$ ${offer.currentPrice}`);
   return linhas.join("\n");
+};
+
+// "general" ao lado de um nicho de verdade nao e so redundante: destino casa por
+// intersecao de nichos, entao um general indevido faz a oferta entrar em qualquer
+// destino que aceite ofertas gerais. O prompt pede exclusividade; isto garante.
+const nichosLimpos = (nicheIds) => {
+  const validos = [...new Set(nicheIds ?? [])].filter((id) => DEFAULT_NICHES.some((niche) => niche.id === id));
+  const especificos = validos.filter((id) => id !== "general");
+  return especificos.length ? especificos.slice(0, 2) : ["general"];
 };
 
 /** A regra continua sendo o chao: se a IA nao responder, a fila nao para. */
@@ -173,7 +186,7 @@ export class AiClassifier {
     const chamada = resposta.content.find((bloco) => bloco.type === "tool_use" && bloco.name === FERRAMENTA.name);
     if (!chamada) throw new Error(`o modelo respondeu sem chamar a ferramenta (stop_reason: ${resposta.stop_reason})`);
     return new Map((chamada.input?.itens ?? []).map((item) => [item.i, {
-      nicheIds: item.nicheIds?.length ? item.nicheIds : ["general"],
+      nicheIds: nichosLimpos(item.nicheIds),
       servePublico: item.servePublico,
       motivo: item.motivo
     }]));

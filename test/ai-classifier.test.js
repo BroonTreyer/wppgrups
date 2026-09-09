@@ -157,3 +157,23 @@ test("classificacao velha expira e o produto e reavaliado", async () => {
   assert.equal(client.chamadas.length, 1);
   assert.deepEqual(decisoes.get(productKey(ofertas[0])).nicheIds, ["beauty"]);
 });
+
+test("general nao convive com nicho de verdade", async () => {
+  const store = storeFalso();
+  const client = clienteFalso(() => [
+    { i: 1, nicheIds: ["general", "home"], servePublico: true, motivo: "artesanato" },
+    { i: 2, nicheIds: ["general"], servePublico: true, motivo: "nao coube" },
+    { i: 3, nicheIds: ["home", "beauty", "kids"], servePublico: true, motivo: "varios" },
+    { i: 4, nicheIds: ["inventado", "home"], servePublico: true, motivo: "nicho que nao existe" }
+  ]);
+  // Lote de 4 para os quatro casos irem numa chamada so.
+  const classifier = new AiClassifier({ store, config: { ai: { ...CONFIG.ai, batchSize: 4 } }, client, clock: () => AGORA });
+
+  const ofertas = ["Barbante Croche", "Coisa Estranha", "Kit Variado", "Produto X"].map((t) => oferta(t));
+  const decisoes = await classifier.classify(ofertas);
+
+  assert.deepEqual(decisoes.get(productKey(ofertas[0])).nicheIds, ["home"], "general cai quando ha nicho de verdade");
+  assert.deepEqual(decisoes.get(productKey(ofertas[1])).nicheIds, ["general"], "sozinho, general fica");
+  assert.deepEqual(decisoes.get(productKey(ofertas[2])).nicheIds, ["home", "beauty"], "no maximo dois");
+  assert.deepEqual(decisoes.get(productKey(ofertas[3])).nicheIds, ["home"], "nicho inexistente e descartado");
+});
