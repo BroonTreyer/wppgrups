@@ -87,7 +87,13 @@ const PERFUME_ARABE = [
   "ard al zaafaran", "al wataniah", "fragrance world", "paris corner"
 ];
 
-export const ACHADINHOS_MUTED_KEYWORDS = [...PERFUME_ARABE];
+// Calcado esportivo, pelo mesmo motivo: 3 dos 23 primeiros posts do grupo #5, e a
+// vitrine de moda do ML e quase so isso. Some o problema do numero — tenis se
+// vende por tamanho, entao um anuncio de "37 Br" nao serve a quase ninguem da
+// lista. "tenis" pega com e sem acento (matchesTitle tira o acento antes).
+const CALCADO_ESPORTIVO = ["tenis"];
+
+export const ACHADINHOS_MUTED_KEYWORDS = [...PERFUME_ARABE, ...CALCADO_ESPORTIVO];
 
 export const ACHADINHOS_PRESET = {
   requireAudienceFit: ACHADINHOS_REQUIRE_AUDIENCE_FIT,

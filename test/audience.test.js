@@ -69,11 +69,13 @@ test("bloqueio errado e pior que bloqueio nenhum: nada de casar pedaco de palavr
   }
 });
 
+// Os tenis que estavam aqui saem antes, pela saturacao — a exigencia de marcacao
+// feminina continua sendo provada por pecas que nao caem naquela lista.
 test("em vestuario o canal exige a marcacao feminina", () => {
   for (const titulo of [
     "Kit Camisetas Aramis Preta Branca Original",
-    "Tenis Reserva Go Troy Leve Confortavel",
-    "Tenis Smash V2 Puma Preto E Branco 41 Br",
+    "Jaqueta Corta Vento Impermeavel Adulto",
+    "Bermuda Sarja Slim Algodao",
     "Mochila Tatica Impermeavel Militar Reforcada"
   ]) {
     assert.match(String(motivo(titulo, ["fashion"])), /marcacao de publico/, titulo);
@@ -148,4 +150,23 @@ test("perfume arabe e barrado por saturacao, nao por publico", () => {
   // nao sobre perfume.
   assert.equal(motivo("O Boticário Insensatez Deo Colônia 100ml", ["beauty"]), null);
   assert.equal(motivo("Natura Essencial Deo Parfum Feminino 100ml", ["beauty"]), null);
+});
+
+test("tenis tambem sai por saturacao", () => {
+  // 3 dos 23 primeiros posts do grupo #5. E tenis se vende por tamanho: um
+  // anuncio "37 Br" nao serve a quase ninguem da lista.
+  for (const titulo of [
+    "Tênis Feminino Delta 122 Olympikus Preto/chumbo Liso 37 Br",
+    "Tenis Feminino Chunky Ramarim Casual Conforto Original",
+    "Tenis Nyx Olympikus Cinza Liso 38"
+  ]) {
+    assert.match(String(motivo(titulo, ["fashion"])), /esta saturado neste canal/, titulo);
+  }
+  // O masculino nao chega na saturacao: o filtro de publico pega antes, e a
+  // ordem importa — o motivo mais especifico e o mais util para quem le o log.
+  assert.match(String(motivo("Tênis De Caminhada Masculino Zex 2 Olympikus 42 Br", ["fashion"])), /publico deste canal/);
+
+  // Outros calcados femininos continuam entrando.
+  assert.equal(motivo("Sandalia Rasteirinha Confortavel Nude", ["fashion"]), null);
+  assert.equal(motivo("Scarpin Feminino Salto Baixo Bico Fino", ["fashion"]), null);
 });
