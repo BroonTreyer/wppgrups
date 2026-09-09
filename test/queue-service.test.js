@@ -20,7 +20,10 @@ class MemoryStore {
 
 // `blockReason` e consultado na selecao, antes de publicar; o padrao "nada
 // bloqueia" isola o teste das regras de elegibilidade, que tem suite propria.
-const publisher = (overrides = {}) => ({ blockReason: () => null, ...overrides });
+// `permanentBlockReason` e o subconjunto atemporal do mesmo julgamento — a fila
+// usa ele para nao guardar oferta que nunca vai sair, entao o duble precisa ter
+// os dois ou o teste passa a exercitar um contrato que nao existe.
+const publisher = (overrides = {}) => ({ blockReason: () => null, permanentBlockReason: () => null, ...overrides });
 
 const config = {
   scheduler: { startHour: 0, endHour: 24, retryDelayMinutes: 5 },
@@ -34,6 +37,9 @@ test("adia oferta sem consumir tentativa quando nenhum destino esta elegivel", a
     store, config, clock: () => now,
     publicationService: publisher({
       blockReason: () => "nicho nao combina",
+      // Bloqueio de nicho e permanente: o teste quer o caso de adiamento, entao
+      // aqui ele nao pode ser permanente, senao a oferta nem entra na fila.
+      permanentBlockReason: () => null,
       publish: async () => { throw new Error("nao deveria publicar sem destino elegivel"); }
     })
   });
@@ -167,11 +173,11 @@ const CANAIS = [
 ];
 
 // Mock fiel ao que importa aqui: so o casamento de nicho bloqueia.
-const porNicho = (extra = {}) => ({
-  blockReason: ({ destination, nicheIds }) =>
-    destination.nicheIds.some((id) => nicheIds.includes(id)) ? null : "nicho nao combina",
-  ...extra
-});
+const porNicho = (extra = {}) => {
+  const casa = ({ destination, nicheIds }) =>
+    destination.nicheIds.some((id) => nicheIds.includes(id)) ? null : "nicho nao combina";
+  return { blockReason: casa, permanentBlockReason: casa, ...extra };
+};
 
 test("cada canal recebe a oferta do nicho dele, nao a melhor da fila", async () => {
   const store = new MemoryStore(structuredClone(CANAIS));
@@ -246,4 +252,56 @@ test("nao repete produto parecido no canal que acabou de publicar um igual", asy
 
   await service.processNext();
   assert.deepEqual(enviados, ["toalha"], "a variedade venceu o desconto maior");
+});
+
+test("nao entra na fila o que nenhum destino ativo aceita", async () => {
+  const store = new MemoryStore();
+  store.state.destinations = [{ id: "isa", active: true, nicheIds: ["beauty"] }];
+  const service = new QueueService({
+    store, config, clock: () => new Date("2026-08-27T17:00:00Z"),
+    publicationService: publisher({ permanentBlockReason: () => "\"masculino\" nao combina com o publico deste canal" })
+  });
+
+  const resultado = await service.enqueue(SAMPLE_OFFER);
+  assert.equal(resultado.skipped, true);
+  assert.match(resultado.reason, /Nenhum destino ativo aceita/);
+  assert.equal(store.state.queue.length, 0, "fila e estoque do que sera publicado, nao deposito");
+});
+
+test("oferta que perdeu o destino sai da fila quando a regra muda", async () => {
+  const store = new MemoryStore();
+  store.state.destinations = [{ id: "isa", active: true, nicheIds: ["beauty"] }];
+  let permanente = null;
+  const service = new QueueService({
+    store, config, clock: () => new Date("2026-08-27T17:00:00Z"),
+    priceGuard: { isExpired: () => false, isFresh: () => true },
+    publicationService: publisher({ permanentBlockReason: () => permanente })
+  });
+
+  await service.enqueue(SAMPLE_OFFER);
+  assert.equal(store.state.queue.filter((i) => i.status === "queued").length, 1);
+
+  // O usuario acrescenta "tenis" a lista de saturacao depois da oferta ja estar
+  // na fila. Sem esta varredura ela ficaria ate expirar, segurando a vaga.
+  permanente = "\"tenis\" esta saturado neste canal";
+  const expirados = await service.expireOldItems();
+
+  assert.equal(expirados, 1);
+  assert.equal(store.state.queue.filter((i) => i.status === "queued").length, 0);
+  assert.match(store.state.queue[0].lastDeferredReason, /Nenhum destino ativo aceita/);
+});
+
+test("sem destino ativo nenhum, a fila continua aceitando", async () => {
+  // Fila vazia com destinos desligados e cenario normal de configuracao: barrar
+  // aqui deixaria o operador sem como preparar nada antes de ligar o canal.
+  const store = new MemoryStore();
+  store.state.destinations = [{ id: "isa", active: false, nicheIds: ["beauty"] }];
+  const service = new QueueService({
+    store, config, clock: () => new Date("2026-08-27T17:00:00Z"),
+    publicationService: publisher({ permanentBlockReason: () => "nicho nao combina" })
+  });
+
+  const resultado = await service.enqueue(SAMPLE_OFFER);
+  assert.ok(!resultado.skipped);
+  assert.equal(store.state.queue.length, 1);
 });

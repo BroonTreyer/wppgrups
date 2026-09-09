@@ -85,9 +85,19 @@ export class PublicationService {
     return this.blockReason(params) === null;
   }
 
-  blockReason({ destination, offer, nicheIds, publications, now }) {
-    if (!destination.active) return "destino desativado";
-    if (destination.available === false) return "destino indisponivel na Z-API";
+  /**
+   * O bloqueio que NAO passa com o tempo.
+   *
+   * Nicho, publico e saturacao sao propriedade do titulo: se barram hoje, barram
+   * sempre. Teto diario, intervalo e madrugada sao o contrario — barram agora e
+   * liberam depois. Misturar os dois entope a fila: oferta que nunca vai sair
+   * fica ocupando vaga, a ingestao ve fila cheia e para de coletar, e o canal
+   * seca com a fila lotada. Foi o que aconteceu em 08/09/2026, com 29 de 36.
+   *
+   * Preco (desconto, teto, vendas) fica de fora de proposito: a revalidacao pode
+   * mudar qualquer um dos tres, entao nao e permanente.
+   */
+  permanentBlockReason({ destination, offer, nicheIds }) {
     if (!Array.isArray(destination.nicheIds) || !destination.nicheIds.some((id) => nicheIds.includes(id))) {
       return `nicho nao combina (destino aceita ${(destination.nicheIds ?? []).join(", ")})`;
     }
@@ -124,6 +134,14 @@ export class PublicationService {
         return `${nicho}: falta a marcacao de publico que este canal exige`;
       }
     }
+    return null;
+  }
+
+  blockReason({ destination, offer, nicheIds, publications, now }) {
+    if (!destination.active) return "destino desativado";
+    if (destination.available === false) return "destino indisponivel na Z-API";
+    const permanente = this.permanentBlockReason({ destination, offer, nicheIds });
+    if (permanente) return permanente;
 
     const discount = discountPercentage(offer);
     if (discount < (destination.minDiscount ?? 0)) return `desconto de ${discount}% abaixo do minimo do destino (${destination.minDiscount}%)`;

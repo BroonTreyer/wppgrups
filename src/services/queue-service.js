@@ -20,6 +20,13 @@ export class QueueService {
     const nicheIds = input.nicheIds?.length ? input.nicheIds : inferNiches(offer);
     const key = productKey(offer);
     return this.store.update((state) => {
+      // Nao entra o que nunca vai sair. Fila e estoque do que sera publicado;
+      // guardar o resto faz a ingestao ver estoque que nao existe e parar de
+      // coletar, e o canal seca com a fila cheia.
+      const semDestino = !this.eligibleDestination(state, offer, nicheIds);
+      if (semDestino && state.destinations.some((d) => d.active)) {
+        return { skipped: true, reason: "Nenhum destino ativo aceita esta oferta", productKey: key };
+      }
       const existing = state.queue.find((item) => item.productKey === key && ["queued", "processing", "awaiting-link"].includes(item.status));
       if (existing) {
         if (offer.currentPrice < existing.offer.currentPrice) {
@@ -158,6 +165,20 @@ export class QueueService {
       })[0] ?? null;
   }
 
+  /**
+   * O destino que ainda pode receber esta oferta algum dia, ou null.
+   *
+   * Nada de teto diario nem de intervalo aqui: a pergunta e se ALGUM destino
+   * ativo aceita o produto, nao se aceita agora.
+   */
+  eligibleDestination(state, offer, nicheIds) {
+    return state.destinations.find((destination) =>
+      destination.active
+      && destination.available !== false
+      && !this.publicationService.permanentBlockReason({ destination, offer, nicheIds })
+    ) ?? null;
+  }
+
   async expireOldItems() {
     if (!this.priceGuard) return 0;
     return this.store.update((state) => {
@@ -165,6 +186,15 @@ export class QueueService {
       const now = this.clock();
       for (const item of state.queue) {
         if (item.status !== "queued" && item.status !== "awaiting-link") continue;
+        // Regra editorial muda depois que a oferta ja entrou — foi assim que 29
+        // itens impublicaveis ficaram segurando a fila em 08/09. Quem deixou de
+        // ter destino sai agora, em vez de esperar o prazo de validade.
+        if (!this.eligibleDestination(state, item.offer, item.nicheIds)) {
+          item.status = "expired";
+          item.lastDeferredReason = "Nenhum destino ativo aceita esta oferta";
+          expired += 1;
+          continue;
+        }
         const restam = minutesUntilExpiry(item.offer, now);
         if (restam !== null && restam < this.config.freshness.minValidityMinutes) {
           item.status = "expired";

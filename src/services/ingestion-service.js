@@ -176,7 +176,15 @@ export class IngestionService {
       for (const offer of await this.select(collected, { ...settings, maxPerRun: limit }, stats)) {
         try {
           const link = await this.affiliateLinkService.linkFor(offer);
-          await this.queueService.enqueue({ ...offer, affiliateUrl: link.url, affiliateTagged: link.attributed, awaitingLink: Boolean(link.pending) });
+          const resultado = await this.queueService.enqueue({ ...offer, affiliateUrl: link.url, affiliateTagged: link.attributed, awaitingLink: Boolean(link.pending) });
+          // Recusada na porta da fila: conta como filtrada, nao como enfileirada.
+          // E memoriza mesmo assim, para nao voltar da vitrine a cada rodada.
+          if (resultado?.skipped) {
+            stats.rejected += 1;
+            stats.noDestination = (stats.noDestination ?? 0) + 1;
+            await this.remember(offer);
+            continue;
+          }
           if (link.pending) stats.awaitingLink = (stats.awaitingLink ?? 0) + 1;
           await this.remember(offer);
           stats.enqueued += 1;
