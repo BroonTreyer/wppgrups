@@ -170,3 +170,21 @@ test("tenis tambem sai por saturacao", () => {
   assert.equal(motivo("Sandalia Rasteirinha Confortavel Nude", ["fashion"]), null);
   assert.equal(motivo("Scarpin Feminino Salto Baixo Bico Fino", ["fashion"]), null);
 });
+
+test("marca torta no titulo tambem e pega", () => {
+  // "Perfume Asad Lataffa" chegou na fila em 08/09: e Lattafa escrito errado pelo
+  // vendedor. Lista de marca tem que casar com o titulo real, nao com o correto.
+  for (const titulo of [
+    "Perfume Asad Lataffa 100ml Eau De Parfum Original Edp",
+    "Perfume Latafa Asad 100ml"
+  ]) {
+    assert.match(String(motivo(titulo, ["beauty"])), /esta saturado neste canal/, titulo);
+  }
+});
+
+test("eudora club e linha masculina, mesmo quando a IA hesita", () => {
+  // A IA barrou este produto numa rodada e liberou na seguinte. A regra nao hesita.
+  assert.match(String(motivo("Eudora Club 6 Cassino Deo-colônia 95ml", ["beauty"])), /publico deste canal/);
+  // Eudora fora da linha Club continua passando.
+  assert.equal(motivo("Eudora Siage Cachos Shampoo 250ml", ["beauty"]), null);
+});

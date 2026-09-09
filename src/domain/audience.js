@@ -14,6 +14,9 @@ const GENERO_MASCULINO = [
 ];
 
 const BARBEARIA_E_SALAO = [
+  // "eudora club" e linha masculina, e a IA julgou os dois jeitos em rodadas
+  // diferentes — barrou numa, liberou noutra. E para isso que a regra existe.
+  "eudora club",
   "barbearia", "barbeiro", "maquina de cortar cabelo", "navalha",
   "peruca", "lace front", "mega hair", "aplique capilar",
   "manequim", "cabeca de manequim", "tela para peruca"
@@ -82,7 +85,9 @@ export const ACHADINHOS_REQUIRE_AUDIENCE_FIT = true;
 // do bloqueio fala de saturacao em vez de dizer que nao serve a quem le.
 const PERFUME_ARABE = [
   "arabe", "oud", "al oud",
-  "lattafa", "mawwal", "sabah", "durrat", "armaf", "rasasi", "ajmal", "afnan",
+  // "lataffa" e "latafa" nao sao erro meu: e como o vendedor escreve. Marca em
+  // titulo de marketplace vem torta, e a lista tem que casar com o que esta la.
+  "lattafa", "lataffa", "latafa", "mawwal", "sabah", "durrat", "armaf", "rasasi", "ajmal", "afnan",
   "khadlaj", "zimaya", "emper", "al haramain", "maison alhambra", "swiss arabian",
   "ard al zaafaran", "al wataniah", "fragrance world", "paris corner"
 ];
