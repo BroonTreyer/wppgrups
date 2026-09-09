@@ -64,7 +64,11 @@ export const ACHADINHOS_BLOCKED_KEYWORDS = [
 export const ACHADINHOS_REQUIRE_BY_NICHE = {
   fashion: [
     "feminino", "feminina",
-    "vestido", "saia", "blusa", "cropped", "legging", "macacao", "body",
+    // "blusa" saiu em 08/09: "Jaqueta Puffer De Frio Blusa Impermeavel Inverno
+    // Intenso" e peca masculina e passou so por causa dela. Vendedor usa "blusa"
+    // como sinonimo de qualquer peca de cima, sem genero — mesma armadilha de
+    // "bolsa" e "sapatilha", que ja deixaram passar um detector de metais.
+    "vestido", "saia", "cropped", "legging", "macacao", "body",
     "calcinha", "sutia", "camisola", "biquini", "maio",
     "sandalia", "rasteirinha", "salto", "scarpin"
   ]

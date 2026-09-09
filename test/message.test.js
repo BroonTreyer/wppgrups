@@ -33,9 +33,12 @@ test("so o canal masculino tem chamada de nicho", () => {
   }
 });
 
-test("desconto agressivo vira manchete de urgencia", () => {
+test("desconto agressivo ganha enfase, sem adjetivo colado", () => {
+  // "PRECO ABSURDO" saiu em 08/09 a pedido do usuario: o numero ja e o argumento,
+  // e o adjetivo gasta a confianca que o desconto real constroi.
   const caption = formatOfferCaption({ ...SAMPLE_OFFER, currentPrice: 999 }, agora, ["home"]);
-  assert.match(caption, /PREÇO ABSURDO/);
+  assert.match(caption, /🚨 \*\d+% OFF\*/);
+  assert.ok(!/ABSURDO/.test(caption));
 });
 
 test("mostra a contagem regressiva quando a promocao esta acabando", () => {
@@ -51,7 +54,7 @@ test("o desconto nao apaga a identidade do post", () => {
   const oferta = { title: "Kerastase Nutritive Bain Satin 250ml", currentPrice: 90, originalPrice: 200, affiliateUrl: "https://meli.la/x" };
   const texto = formatOfferCaption(oferta, new Date("2026-09-07T18:00:00Z"), ["electronics"]);
   assert.match(texto.split("\n")[0], /ACHADO TECH/, "a manchete continua sendo a do nicho, nao a do desconto");
-  assert.match(texto, /PRECO ABSURDO|PREÇO ABSURDO/, "a enfase do desconto continua, na linha do preco");
+  assert.match(texto, /🚨 \*\d+% OFF\*/, "a enfase do desconto continua, na linha do preco");
 });
 
 test("desconto modesto usa a etiqueta discreta", () => {

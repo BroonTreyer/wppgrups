@@ -14,6 +14,12 @@ import { productKey } from "../src/domain/offer.js";
 
 // Os casos que a regra erra ou quase erra, tirados da auditoria de 07/09.
 const AMOSTRA = [
+  // Os erros reais de 08/09, que o prompt reforcado precisa acertar.
+  ["Jaqueta Puffer De Frio  Blusa Impermeável Inverno Intenso", "Roupas e Acessorios", 65.45],
+  ["Eudora Club 6 Cassino Deo-colônia 95ml", "Beleza e Cuidado Pessoal", 78.06],
+  ["Perfume Asad Lataffa 100ml Eau De Parfum Original Edp", "Beleza e Cuidado Pessoal", 193.33],
+  ["Blusa Feminina Cropped Canelada Manga Longa", "Roupas e Acessorios", 39.9],
+  ["Aparador De Pelos Multigroom 8 Em 1 Mg3917/15 Philips", "Beleza e Cuidado Pessoal", 142.0],
   ["Mochila Executiva Grande Impermeavel Para Notebook 15,6", "Malas, Mochilas e Bolsas", 129.9],
   ["Creatina Monohidratada 300g Em Pote Growth", "Suplementos Alimentares", 89.9],
   ["Mascara Medicube Facial Gel Colageno Zero Poros", "Beleza e Cuidado Pessoal", 74.5],

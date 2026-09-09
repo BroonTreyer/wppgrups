@@ -43,7 +43,9 @@ export function loadConfig(env = process.env) {
       enabled: bool(env.AI_CLASSIFIER_ENABLED, false),
       apiKey: env.ANTHROPIC_API_KEY ?? "",
       model: env.AI_CLASSIFIER_MODEL ?? "claude-opus-5",
-      effort: env.AI_CLASSIFIER_EFFORT ?? "low",
+            // Alto de proposito: classificar titulo curto parece simples, mas o que
+      // decide o canal e o julgamento de publico, e ali o modelo erra com pressa.
+      effort: env.AI_CLASSIFIER_EFFORT ?? "high",
       batchSize: int(env.AI_CLASSIFIER_BATCH_SIZE, 25),
       // Cada produto se paga uma vez por mes, nao a cada rodada de ingestao.
       memoryDays: int(env.AI_CLASSIFIER_MEMORY_DAYS, 30)

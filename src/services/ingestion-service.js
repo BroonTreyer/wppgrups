@@ -95,6 +95,10 @@ export class IngestionService {
     if (settings.maxDiscount && discount > settings.maxDiscount) return "desconto alto demais para ser real";
     if (settings.minSold && (offer.soldCount ?? 0) < settings.minSold) return "pouca gente comprou esse produto";
     if (isRisky(offer, settings.blockedKeywords ?? [])) return "categoria sensivel";
+    // Preco que so vale com cupom nao vai para o canal. Esconder a condicao e
+    // anunciar um preco que a pagina desmente; anunciar a condicao e mandar o
+    // leitor cacar um cupom que pode nao existir mais. Mesma regra do frete.
+    if (/cupom/i.test(offer.paymentMethod ?? "")) return "preco depende de cupom";
     if (settings.minRating && (offer.rating ?? 0) < settings.minRating) return "avaliacao abaixo do minimo";
     if (settings.minPrice && offer.currentPrice < settings.minPrice) return "preco abaixo da faixa";
     if (settings.maxPrice && offer.currentPrice > settings.maxPrice) return "preco acima da faixa";

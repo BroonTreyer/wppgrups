@@ -53,6 +53,19 @@ Responda false quando o produto nao serve a esse canal, mesmo sendo uma boa ofer
 - Material medico, equipamento comercial ou industrial.
 - Produto para animais.
 - Peruca, cabeca de manequim e material de salao profissional.
+- LINHA masculina de marca feminina. A marca nao decide, a linha decide: "Eudora
+  Club", "Malbec" e "Egeo Man" sao masculinos ainda que Eudora e Boticario
+  vendam muito para mulher. Leia a linha, nao o fabricante.
+
+NA DUVIDA EM VESTUARIO, RESPONDA false. Deixar passar uma peca masculina no canal
+feminino custa mais caro que pular uma peca boa: a primeira o leitor ve, a segunda
+ninguem sente falta. Peca de cima sem marcacao explicita de genero (jaqueta,
+moletom, corta-vento, casaco, blusa) e quase sempre masculina ou unissex —
+"Jaqueta Puffer De Frio Blusa Impermeavel Inverno Intenso" e false. "Blusa" e
+"bolsa" nao sao marcacao de genero: vendedor usa para qualquer peca.
+
+SEJA CONSISTENTE. O mesmo titulo tem que receber sempre a mesma resposta. Decida
+pelo que esta escrito no titulo, nao por impressao geral do produto.
 
 Responda true para o que uma mulher compraria para si, para a casa ou para os filhos.
 Cosmetico, skincare, panela, roupa de cama, organizador, brinquedo, suplemento comum

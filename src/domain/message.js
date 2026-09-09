@@ -37,7 +37,9 @@ export function formatOfferCaption(offer, now = new Date(), nicheIds = offer.nic
   if (offer.originalPrice) lines.push(`~${money.format(offer.originalPrice)}~`);
   lines.push(`💰 *${money.format(offer.currentPrice)}*${offer.paymentMethod ? ` ${offer.paymentMethod}` : ""}`);
   if (discount) {
-    lines.push(discount >= HYPE_DISCOUNT ? `🚨 *${discount}% OFF* — PREÇO ABSURDO` : `🏷️ ${discount}% OFF`);
+    // O numero ja e o argumento. "PREÇO ABSURDO" colado nele nao acrescenta
+    // informacao e gasta a confianca que o desconto real constroi.
+    lines.push(discount >= HYPE_DISCOUNT ? `🚨 *${discount}% OFF*` : `🏷️ ${discount}% OFF`);
   }
 
   const provas = [];

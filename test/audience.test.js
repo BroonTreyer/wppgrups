@@ -188,3 +188,16 @@ test("eudora club e linha masculina, mesmo quando a IA hesita", () => {
   // Eudora fora da linha Club continua passando.
   assert.equal(motivo("Eudora Siage Cachos Shampoo 250ml", ["beauty"]), null);
 });
+
+test("blusa nao e sinal de genero", () => {
+  // Caso real de 08/09: "Jaqueta Puffer De Frio Blusa Impermeavel Inverno Intenso"
+  // e peca masculina e entrou no canal so porque "blusa" contava como feminino.
+  // Vendedor usa "blusa" para qualquer peca de cima.
+  assert.match(
+    String(motivo("Jaqueta Puffer De Frio Blusa Impermeavel Inverno Intenso", ["fashion"])),
+    /marcacao de publico/
+  );
+  // O que tem marcacao de verdade continua entrando.
+  assert.equal(motivo("Blusa Feminina Cropped Canelada Manga Longa", ["fashion"]), null);
+  assert.equal(motivo("Vestido Midi Floral Manga Bufante", ["fashion"]), null);
+});
