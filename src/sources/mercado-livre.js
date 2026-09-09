@@ -171,7 +171,9 @@ export class MercadoLivreSource {
   get id() { return MercadoLivreSource.id; }
 
   async collect({ pages = 2, category = "" } = {}) {
-    const total = Math.min(Math.max(Number(pages) || 1, 1), 10);
+    // A vitrine vai ate a pagina ~12 por categoria (medido em 09/09: a 11 ainda traz
+    // 43 ineditos, a 15 ja repete). O teto de 10 cortava conteudo real.
+    const total = Math.min(Math.max(Number(pages) || 1, 1), 15);
     const categoryName = ML_CATEGORIES.find((item) => item.id === category)?.name ?? null;
     const offers = [];
     const seen = new Set();
@@ -189,7 +191,9 @@ export class MercadoLivreSource {
 
   async refreshMany(offers, { pages = 2 } = {}) {
     const categories = [...new Set(offers.map((offer) => offer.sourceContext?.category ?? ""))];
-    const total = Math.min(Math.max(Number(pages) || 1, 1), 10);
+    // A vitrine vai ate a pagina ~12 por categoria (medido em 09/09: a 11 ainda traz
+    // 43 ineditos, a 15 ja repete). O teto de 10 cortava conteudo real.
+    const total = Math.min(Math.max(Number(pages) || 1, 1), 15);
     const found = new Map();
     for (const category of categories) {
       for (let page = 1; page <= total; page += 1) {

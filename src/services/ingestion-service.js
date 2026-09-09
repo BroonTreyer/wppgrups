@@ -4,7 +4,7 @@ import { isRisky, scoreOffer } from "../domain/scoring.js";
 import { SessionExpiredError } from "./affiliate-link-service.js";
 
 const DEFAULT_FILTERS = { enabled: false, minDiscount: 20, maxDiscount: 90, minRating: 4.3, minSold: 500, minPrice: 0, maxPrice: 400, sweetSpotMin: 25, sweetSpotMax: 200, maxPerRun: 8, maxPerNiche: 2, blockedKeywords: [], categories: [] };
-const INTEGER_FIELDS = [["minDiscount", 0, 100], ["maxDiscount", 0, 100], ["minSold", 0, 1000000], ["sweetSpotMin", 0, 100000], ["sweetSpotMax", 1, 100000], ["maxPerRun", 1, 50], ["maxPerNiche", 1, 50], ["pages", 1, 10]];
+const INTEGER_FIELDS = [["minDiscount", 0, 100], ["maxDiscount", 0, 100], ["minSold", 0, 1000000], ["sweetSpotMin", 0, 100000], ["sweetSpotMax", 1, 100000], ["maxPerRun", 1, 50], ["maxPerNiche", 1, 50], ["pages", 1, 15]];
 const NUMBER_FIELDS = [["minRating", 0, 5], ["minPrice", 0, 1000000], ["maxPrice", 0, 1000000]];
 const CATEGORY_PATTERN = /^[A-Z0-9]{1,12}$/;
 const MAX_MEMORY = 20000;
