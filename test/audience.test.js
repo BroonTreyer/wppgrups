@@ -126,5 +126,26 @@ test("unissex barra roupa mas nao barra perfume", () => {
   // Parfum Unissex", perfume arabe que e item legitimo de canal feminino. Em
   // roupa nao faz falta — a exigencia de marcacao feminina continua pegando.
   assert.match(String(motivo("Moletom Canguru Liso Algodao Unissex", ["fashion"])), /marcacao de publico/);
-  assert.equal(motivo("Mawwal Malek Eau De Parfum Unissex Perfume Arabe 100ml", ["beauty"]), null);
+  // Perfume nacional unissex: "unissex" nao pode barra-lo. (O arabe passa aqui
+  // tambem, mas cai depois na regra de saturacao — sao dois filtros diferentes.)
+  assert.equal(motivo("Egeo Dolce Colors Deo Colonia Unissex 90ml", ["beauty"]), null);
+});
+
+test("perfume arabe e barrado por saturacao, nao por publico", () => {
+  // Seis dos vinte e tres posts do grupo #5 em 08/09 eram perfume arabe. Eles
+  // SERVEM ao canal — o motivo do bloqueio precisa dizer saturacao, nao dizer
+  // que o produto nao serve a quem le.
+  for (const titulo of [
+    "Perfume Árabe Durrat Al Aroos Feminino 85ml Edp Original",
+    "Lattafa Bade'e Al Oud For Glory 100ml",
+    "Mawwal Malek Eau De Parfum Unissex Perfume Arabe 100ml",
+    "Perfume Sedutor Árabe Sabah 100ml Original Feminino"
+  ]) {
+    assert.match(String(motivo(titulo, ["beauty"])), /esta saturado neste canal/, titulo);
+  }
+
+  // Perfume nacional continua passando: a regra e sobre saturacao daquela linha,
+  // nao sobre perfume.
+  assert.equal(motivo("O Boticário Insensatez Deo Colônia 100ml", ["beauty"]), null);
+  assert.equal(motivo("Natura Essencial Deo Parfum Feminino 100ml", ["beauty"]), null);
 });

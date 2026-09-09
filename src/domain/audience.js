@@ -75,8 +75,23 @@ export const ACHADINHOS_MAX_PRICE = 400;
 // e o canal masculino nao herda um veredito escrito para o canal feminino.
 export const ACHADINHOS_REQUIRE_AUDIENCE_FIT = true;
 
+// Saturacao, nao publico. Perfume arabe SERVE ao canal feminino — a IA acerta ao
+// dizer que sim. O problema e volume: a vitrine de beleza do ML esta tomada por
+// eles, e em 08/09/2026 seis dos vinte e tres posts do grupo #5 eram perfume
+// arabe, 26% do que saiu. Por isso a lista e separada da de publico, e o motivo
+// do bloqueio fala de saturacao em vez de dizer que nao serve a quem le.
+const PERFUME_ARABE = [
+  "arabe", "oud", "al oud",
+  "lattafa", "mawwal", "sabah", "durrat", "armaf", "rasasi", "ajmal", "afnan",
+  "khadlaj", "zimaya", "emper", "al haramain", "maison alhambra", "swiss arabian",
+  "ard al zaafaran", "al wataniah", "fragrance world", "paris corner"
+];
+
+export const ACHADINHOS_MUTED_KEYWORDS = [...PERFUME_ARABE];
+
 export const ACHADINHOS_PRESET = {
   requireAudienceFit: ACHADINHOS_REQUIRE_AUDIENCE_FIT,
+  mutedKeywords: ACHADINHOS_MUTED_KEYWORDS,
   blockedKeywords: ACHADINHOS_BLOCKED_KEYWORDS,
   requireAnyByNiche: ACHADINHOS_REQUIRE_BY_NICHE,
   maxPrice: ACHADINHOS_MAX_PRICE

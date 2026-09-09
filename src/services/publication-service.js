@@ -106,6 +106,12 @@ export class PublicationService {
     const bloqueada = (destination.blockedKeywords ?? []).find((palavra) => matchesTitle(offer.title, palavra));
     if (bloqueada) return `"${bloqueada}" nao combina com o publico deste canal`;
 
+    // Saturacao e outra coisa: o produto SERVE, mas o canal ja esta cheio dele.
+    // Perfume arabe era 26% do que saia do grupo #5. O motivo precisa dizer isso,
+    // e nao acusar o produto de nao servir a quem le.
+    const saturada = (destination.mutedKeywords ?? []).find((palavra) => matchesTitle(offer.title, palavra));
+    if (saturada) return `"${saturada}" esta saturado neste canal`;
+
     // Exigencia POSITIVA por nicho. Bloquear marca masculina uma a uma e enxugar
     // gelo: "Kit Camisetas Aramis", "Tenis Reserva Go Troy" e "Tenis Smash V2 41
     // Br" nao dizem "masculino" em lugar nenhum. Em roupa e calcado a marcacao de
