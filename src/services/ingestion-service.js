@@ -10,14 +10,16 @@ const CATEGORY_PATTERN = /^[A-Z0-9]{1,12}$/;
 const MAX_MEMORY = 20000;
 const MAX_ALERTS = 50;
 const normalize = (text) => String(text ?? "").normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
-const mainNiche = (offer) => inferNiches(offer).find((niche) => niche !== "general") ?? "general";
+// Ja classificada (por IA ou cache), a oferta traz os nichos consigo; sem isso, a regra decide.
+const mainNiche = (offer) => (offer.nicheIds?.length ? offer.nicheIds : inferNiches(offer)).find((niche) => niche !== "general") ?? "general";
 
 export class IngestionService {
-  constructor({ store, queueService, affiliateLinkService, sources = [], config, clock = () => new Date() }) {
+  constructor({ store, queueService, affiliateLinkService, sources = [], config, classifier = null, clock = () => new Date() }) {
     this.store = store;
     this.queueService = queueService;
     this.affiliateLinkService = affiliateLinkService;
     this.sources = new Map(sources.map((source) => [source.id, source]));
+    this.classifier = classifier;
     this.config = config;
     this.clock = clock;
     this.running = false;
@@ -225,6 +227,9 @@ export class IngestionService {
     }
     const scoring = { sweetSpot: { min: settings.sweetSpotMin ?? 25, max: settings.sweetSpotMax ?? 200 }, riskyKeywords: settings.blockedKeywords ?? [] };
     candidates.sort((a, b) => scoreOffer(b, scoring) - scoreOffer(a, scoring));
+    // A IA entra so aqui, depois dos filtros baratos: nao se paga para classificar
+    // o que preco, desconto ou repeticao ja descartaram.
+    await this.classificar(candidates, stats);
     const perNiche = new Map();
     const selected = [];
     for (const offer of candidates) {
@@ -236,6 +241,26 @@ export class IngestionService {
       selected.push(offer);
     }
     return selected;
+  }
+
+  // Carimba nicho e julgamento de publico na propria oferta. Quem le depois
+  // (mainNiche aqui, enqueue na fila, blockReason na publicacao) ja recebe pronto;
+  // sem classificador, nada muda e a regra decide como sempre.
+  async classificar(candidates, stats) {
+    if (!this.classifier?.ativo || !candidates.length) return;
+    const decisoes = await this.classifier.classify(candidates);
+    let porIa = 0;
+    for (const offer of candidates) {
+      const decisao = decisoes.get(productKey(offer));
+      if (!decisao) continue;
+      offer.nicheIds = decisao.nicheIds;
+      if (decisao.servePublico !== null && decisao.servePublico !== undefined) {
+        offer.audience = { serve: decisao.servePublico, motivo: decisao.motivo, por: decisao.por };
+      }
+      if (decisao.por === "ia") porIa += 1;
+    }
+    stats.classifiedByAi = porIa;
+    stats.classifiedFromCache = candidates.length - porIa;
   }
 
   async recentProducts() {

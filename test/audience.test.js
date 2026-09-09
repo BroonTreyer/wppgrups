@@ -90,3 +90,34 @@ test("o teto de preco do canal barra o eletrodomestico caro por regra", () => {
   });
   assert.match(String(caro), /passa do teto/);
 });
+
+test("o veredito da IA barra o que nenhuma palavra pegaria", () => {
+  // "Kit Camisetas Aramis" nao diz "masculino" em lugar nenhum: a lista de
+  // palavras passa batido, a exigencia de marcacao feminina pega no fashion, e
+  // fora do fashion so o julgamento pega.
+  const comIa = (title, nicheIds, audience) => service.blockReason({
+    destination: canal, offer: { ...OFFER, title, audience }, nicheIds, publications: [], now: AGORA
+  });
+
+  assert.match(
+    String(comIa("Kit Ferramentas Bosch 100 Pecas", ["home"], { serve: false, motivo: "publico masculino" })),
+    /IA nao ve publico deste canal: publico masculino/
+  );
+  assert.equal(comIa("Jogo De Panelas Antiaderente 5 Pecas", ["home"], { serve: true, motivo: "cozinha" }), null);
+  // Sem julgamento (IA desligada ou item pela regra), nada muda.
+  assert.equal(comIa("Jogo De Panelas Antiaderente 5 Pecas", ["home"], undefined), null);
+});
+
+test("destino que nao pediu o julgamento ignora o veredito", () => {
+  const canalMasculino = { ...canal, requireAudienceFit: false, nicheIds: ["tools-auto", "home"] };
+  const masculino = new PublicationService({
+    store: { read: async () => ({ destinations: [canalMasculino], publications: [], deliveryEvents: [], offers: [], queue: [] }) },
+    zapi: {}, config: { limits: {} }, clock: () => AGORA
+  });
+  const motivo = masculino.blockReason({
+    destination: canalMasculino,
+    offer: { ...OFFER, title: "Kit Ferramentas Bosch 100 Pecas", audience: { serve: false, motivo: "publico masculino" } },
+    nicheIds: ["tools-auto"], publications: [], now: AGORA
+  });
+  assert.ok(!String(motivo).includes("IA nao ve publico"), `nao devia usar o veredito: ${motivo}`);
+});

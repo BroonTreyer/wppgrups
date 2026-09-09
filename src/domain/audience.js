@@ -68,7 +68,12 @@ export const ACHADINHOS_REQUIRE_BY_NICHE = {
 // caro por REGRA, nao por efeito da pontuacao.
 export const ACHADINHOS_MAX_PRICE = 400;
 
+// Liga o julgamento de publico da IA neste destino. Sem isto o campo e ignorado,
+// e o canal masculino nao herda um veredito escrito para o canal feminino.
+export const ACHADINHOS_REQUIRE_AUDIENCE_FIT = true;
+
 export const ACHADINHOS_PRESET = {
+  requireAudienceFit: ACHADINHOS_REQUIRE_AUDIENCE_FIT,
   blockedKeywords: ACHADINHOS_BLOCKED_KEYWORDS,
   requireAnyByNiche: ACHADINHOS_REQUIRE_BY_NICHE,
   maxPrice: ACHADINHOS_MAX_PRICE

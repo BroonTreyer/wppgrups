@@ -54,7 +54,8 @@ await store.update((state) => {
     Object.assign(destino, {
       blockedKeywords: [...ACHADINHOS_PRESET.blockedKeywords],
       requireAnyByNiche: structuredClone(ACHADINHOS_PRESET.requireAnyByNiche),
-      maxPrice: ACHADINHOS_PRESET.maxPrice
+      maxPrice: ACHADINHOS_PRESET.maxPrice,
+      requireAudienceFit: ACHADINHOS_PRESET.requireAudienceFit
     });
   }
 });

@@ -91,6 +91,14 @@ export class PublicationService {
     if (!Array.isArray(destination.nicheIds) || !destination.nicheIds.some((id) => nicheIds.includes(id))) {
       return `nicho nao combina (destino aceita ${(destination.nicheIds ?? []).join(", ")})`;
     }
+    // Julgamento da IA sobre o publico, quando existe. Vem antes da lista de
+    // palavras porque pega o que nenhuma palavra pega: "Kit Camisetas Aramis" nao
+    // diz "masculino" em lugar nenhum. So vale onde o destino pediu — o canal
+    // masculino nao herda o julgamento escrito para o feminino.
+    if (destination.requireAudienceFit && offer.audience?.serve === false) {
+      return `a IA nao ve publico deste canal: ${offer.audience.motivo ?? "sem motivo declarado"}`;
+    }
+
     // Publico do canal. O nicho diz o ASSUNTO ("beleza"), mas nao diz para quem:
     // maquina de cortar cabelo, peruca, cabeca de manequim e tenis masculino sao
     // todos "beleza" ou "moda" e nenhum serve a um canal feminino. A lista e por

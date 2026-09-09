@@ -37,6 +37,17 @@ export function loadConfig(env = process.env) {
       memoryHours: int(env.INGESTION_MEMORY_HOURS, 72),
       priceDropTolerance: decimal(env.INGESTION_PRICE_DROP_TOLERANCE, 0.05)
     },
+    // Classificacao por IA. Desligada por padrao: sem chave, sem custo e sem
+    // surpresa — a regra continua respondendo sozinha.
+    ai: {
+      enabled: bool(env.AI_CLASSIFIER_ENABLED, false),
+      apiKey: env.ANTHROPIC_API_KEY ?? "",
+      model: env.AI_CLASSIFIER_MODEL ?? "claude-opus-5",
+      effort: env.AI_CLASSIFIER_EFFORT ?? "low",
+      batchSize: int(env.AI_CLASSIFIER_BATCH_SIZE, 25),
+      // Cada produto se paga uma vez por mes, nao a cada rodada de ingestao.
+      memoryDays: int(env.AI_CLASSIFIER_MEMORY_DAYS, 30)
+    },
     freshness: {
       minutes: int(env.PRICE_FRESHNESS_MINUTES, 25),
       maxAgeHours: int(env.QUEUE_MAX_AGE_HOURS, 6),
@@ -89,4 +100,9 @@ export function assertSafeConfig(config) {
   if (config.limits.republishCooldownDays < 0) throw new Error("REPUBLISH_COOLDOWN_DAYS nao pode ser negativo");
   if (config.ingestion.memoryHours < 1) throw new Error("INGESTION_MEMORY_HOURS deve ser pelo menos 1");
   if (config.ingestion.priceDropTolerance < 0 || config.ingestion.priceDropTolerance >= 1) throw new Error("INGESTION_PRICE_DROP_TOLERANCE deve estar entre 0 e 1");
+  // Ligar a IA sem chave nao quebra nada — cai na regra em silencio. E o silencio
+  // e o problema: quem ligou acha que esta usando IA e nao esta.
+  if (config.ai.enabled && !config.ai.apiKey) throw new Error("Defina ANTHROPIC_API_KEY antes de ligar AI_CLASSIFIER_ENABLED");
+  if (config.ai.batchSize < 1 || config.ai.batchSize > 50) throw new Error("AI_CLASSIFIER_BATCH_SIZE deve estar entre 1 e 50");
+  if (!["low", "medium", "high", "xhigh", "max"].includes(config.ai.effort)) throw new Error("AI_CLASSIFIER_EFFORT deve ser low, medium, high, xhigh ou max");
 }
