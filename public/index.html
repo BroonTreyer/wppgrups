@@ -89,6 +89,10 @@
     async function api(path, options = {}) {
       const response = await fetch(path, { ...options, headers: { ...auth(), ...options.headers } });
       const body = await response.json();
+      // 401 com campo preenchido quase sempre e token velho guardado no navegador:
+      // o ADMIN_TOKEN mudou no .env e o localStorage ficou com o antigo. Dizer
+      // "Nao autorizado" manda o operador procurar o problema no lugar errado.
+      if (response.status === 401) throw new Error("Token invalido. Cole o ADMIN_TOKEN atual do .env e clique em Salvar token — o navegador pode ter guardado um token antigo.");
       if (!response.ok) throw new Error(body.error || "Erro");
       return body;
     }
