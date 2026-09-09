@@ -70,10 +70,16 @@ export function intervalFactor(date = new Date()) {
   return currentBurst(date) ? 1 : Infinity;
 }
 
-/** Quanto este destino deve esperar entre posts agora, em minutos. */
+/**
+ * Quanto este destino deve esperar entre posts agora, em minutos.
+ *
+ * Aceita fracao de propósito: 0.1 = 6 segundos. O arredondamento para no minimo
+ * 1 minuto que existia aqui era um teto escondido — quem pedisse rajada rapida
+ * batia nele sem nenhuma pista de onde vinha.
+ */
 export function effectiveInterval(minMinutesBetweenPosts, date = new Date()) {
   if (!currentBurst(date)) return Infinity;
-  return Math.max(1, Math.round(minMinutesBetweenPosts));
+  return Math.max(0, Number(minMinutesBetweenPosts) || 0);
 }
 
 export function isDeadHour(date = new Date()) {
@@ -92,7 +98,9 @@ export function dayCurve(date = new Date()) {
 export function burstCapacity(destinations = []) {
   const porRajada = destinations
     .filter((d) => d.active !== false)
-    .reduce((total, d) => total + Math.floor(60 / Math.max(1, d.minMinutesBetweenPosts || 1)), 0);
+    // Sem o piso de 1 minuto: um destino a 0.1 min rende 600 por hora, e a conta
+    // precisa dizer isso em vez de mentir 60.
+    .reduce((total, d) => total + Math.floor(60 / Math.max(0.01, Number(d.minMinutesBetweenPosts) || 0.01)), 0);
   return { porRajada, porDia: porRajada * BURST_WINDOWS.length, rajadas: BURST_WINDOWS.length };
 }
 

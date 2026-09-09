@@ -84,3 +84,19 @@ test("denuncia as rajadas que a janela do agendador silencia", () => {
   assert.deepEqual(burstsOutsideWindow(0, 24), [], "janela aberta nao silencia nada");
   assert.equal(burstsOutsideWindow(13, 18).length, 8, "janela estreita silencia oito");
 });
+
+test("o intervalo aceita fracao de minuto, sem piso escondido", () => {
+  const naRajada = new Date("2026-09-08T16:00:00Z"); // 13h BRT
+  // O arredondamento para 1 minuto que existia aqui era um teto invisivel:
+  // quem pedisse 10 posts por minuto batia nele sem pista de onde vinha.
+  assert.equal(effectiveInterval(0.1, naRajada), 0.1);
+  assert.equal(effectiveInterval(6, naRajada), 6);
+  assert.equal(effectiveInterval(0, naRajada), 0);
+  assert.equal(effectiveInterval(0.1, new Date("2026-09-08T04:00:00Z")), Infinity, "fora de rajada continua fechado");
+});
+
+test("a capacidade conta a fracao em vez de mentir 60", () => {
+  const { porRajada, porDia } = burstCapacity([{ active: true, minMinutesBetweenPosts: 0.1 }]);
+  assert.equal(porRajada, 600, "0.1 min = 6s = 600 por hora");
+  assert.equal(porDia, 7200);
+});

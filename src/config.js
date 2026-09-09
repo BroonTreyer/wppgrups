@@ -92,7 +92,8 @@ export function assertSafeConfig(config) {
   if (config.scheduler.startHour < 0 || config.scheduler.startHour > 23 || config.scheduler.endHour < 1 || config.scheduler.endHour > 24) {
     throw new Error("A janela de publicacao deve usar horas entre 0 e 24");
   }
-  if (config.scheduler.intervalSeconds < 10) throw new Error("SCHEDULER_INTERVAL_SECONDS deve ser pelo menos 10");
+  // 5s e o chao: abaixo disso o ciclo custa mais que o trabalho que faz.
+  if (config.scheduler.intervalSeconds < 5) throw new Error("SCHEDULER_INTERVAL_SECONDS deve ser pelo menos 5");
   if (config.ingestion.intervalMinutes < 5) throw new Error("INGESTION_INTERVAL_MINUTES deve ser pelo menos 5");
   if (config.freshness.minutes < 1) throw new Error("PRICE_FRESHNESS_MINUTES deve ser pelo menos 1");
   if (config.freshness.maxAgeHours < 1) throw new Error("QUEUE_MAX_AGE_HOURS deve ser pelo menos 1");

@@ -59,11 +59,18 @@ export class DestinationService {
         if (patch.active && destination.available === false) throw new Error("Sincronize novamente antes de ativar um destino indisponivel");
         destination.active = patch.active;
       }
-      for (const [field, min, max] of [["minDiscount", 0, 100], ["maxDailyPosts", 1, 500], ["minMinutesBetweenPosts", 0, 1440], ["maxPrice", 0, 1000000], ["minSold", 0, 1000000]]) {
+      for (const [field, min, max] of [["minDiscount", 0, 100], ["maxDailyPosts", 1, 500], ["maxPrice", 0, 1000000], ["minSold", 0, 1000000]]) {
         if (patch[field] === undefined) continue;
         const value = Number(patch[field]);
         if (!Number.isInteger(value) || value < min || value > max) throw new Error(`${field} deve ser um inteiro entre ${min} e ${max}`);
         destination[field] = value;
+      }
+      // O intervalo aceita fracao: 0.1 = 6 segundos. Exigir inteiro aqui deixava o
+      // painel sem como pedir rajada rapida, mesmo o motor ja sabendo faze-la.
+      if (patch.minMinutesBetweenPosts !== undefined) {
+        const value = Number(patch.minMinutesBetweenPosts);
+        if (!Number.isFinite(value) || value < 0 || value > 1440) throw new Error("minMinutesBetweenPosts deve ser um numero entre 0 e 1440");
+        destination.minMinutesBetweenPosts = value;
       }
       if (patch.nicheIds !== undefined) {
         if (!Array.isArray(patch.nicheIds) || !patch.nicheIds.length) throw new Error("Selecione pelo menos um nicho");
