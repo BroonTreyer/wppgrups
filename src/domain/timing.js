@@ -1,16 +1,21 @@
 /**
  * Quando publicar, e com que frequencia.
  *
- * O modelo e de RAJADAS, nao de gotejamento: seis janelas por dia — duas de
- * manha, duas a tarde, duas a noite — e fora delas ninguem publica. Dentro da
+ * O modelo e de RAJADAS, nao de gotejamento: doze janelas por dia — quatro de
+ * manha, quatro a tarde, quatro a noite — e fora delas ninguem publica. Dentro da
  * janela cada destino solta um post a cada `minMinutesBetweenPosts`, entao uma
  * janela de uma hora com 6 destinos a 12 min rende ~30 anuncios, e o dia fecha
- * em ~180.
+ * em ~360.
  *
  * A conta e essa e vale conferir ao mexer:
  *
  *     posts por rajada = destinos ativos x (60 / minMinutesBetweenPosts)
- *     posts por dia    = posts por rajada x 6
+ *     posts por dia    = posts por rajada x 12
+ *
+ * ATENCAO: a janela do agendador (PUBLISHING_START_HOUR/END_HOUR) e um segundo
+ * portao, e o mais silencioso dos dois. Com 8h-23h as rajadas das 6h e das 23h
+ * simplesmente nunca acontecem — 17% do dia perdido sem nenhuma mensagem de erro.
+ * `burstsOutsideWindow` existe para que isso apareca na partida.
  *
  * Os horarios vem de pratica de mercado, nao de medicao: enquanto os canais nao
  * tiverem membros nao existe engajamento para medir. Quando tiverem, e aqui que
@@ -89,4 +94,15 @@ export function burstCapacity(destinations = []) {
     .filter((d) => d.active !== false)
     .reduce((total, d) => total + Math.floor(60 / Math.max(1, d.minMinutesBetweenPosts || 1)), 0);
   return { porRajada, porDia: porRajada * BURST_WINDOWS.length, rajadas: BURST_WINDOWS.length };
+}
+
+/**
+ * As rajadas que a janela do agendador silencia. Vazio e o estado saudavel.
+ *
+ * Sao dois portoes independentes: a rajada diz QUANDO faz sentido publicar, e
+ * `isWithinPublishingWindow` diz quando e permitido. Quando discordam, quem perde
+ * e sempre a rajada — e em silencio.
+ */
+export function burstsOutsideWindow(startHour, endHour) {
+  return BURST_WINDOWS.filter((janela) => janela.hora < startHour || janela.hora >= endHour);
 }

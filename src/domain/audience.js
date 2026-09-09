@@ -6,7 +6,10 @@
 // bloquear "Barbante", "sunga" nao pode bloquear "Sungado".
 
 const GENERO_MASCULINO = [
-  "masculino", "masculina", "unissex",
+  // "unissex" saiu daqui em 08/09: barrava perfume arabe unissex, que e item de
+  // canal feminino. Em roupa nao faz falta — requireAnyByNiche ja exige a
+  // marcacao feminina, e "Moletom Unissex" continua barrado por la.
+  "masculino", "masculina",
   "sunga", "cueca", "barba", "barbear", "barbeador", "pos barba"
 ];
 

@@ -27,7 +27,6 @@ test("o preset barra o que nao e do publico do canal", () => {
     ["Maquina De Cortar Cabelo Profissional Barbeiro", ["beauty"]],
     ["Cabeca Manequim Isopor Suporte Para Perucas", ["beauty"]],
     ["Kit 3 Sungas Masculinas Praia", ["fashion"]],
-    ["Moletom Canguru Liso Algodao Unissex", ["fashion"]],
     ["Cadeira De Rodas Dobravel Aco 120kg", ["health"]],
     ["Colchao Antiescara Pneumatico Para Acamados", ["home"]],
     ["Andador Dobravel Aluminio 4 Rodas", ["health"]],
@@ -120,4 +119,12 @@ test("destino que nao pediu o julgamento ignora o veredito", () => {
     nicheIds: ["tools-auto"], publications: [], now: AGORA
   });
   assert.ok(!String(motivo).includes("IA nao ve publico"), `nao devia usar o veredito: ${motivo}`);
+});
+
+test("unissex barra roupa mas nao barra perfume", () => {
+  // "unissex" saiu da lista de palavras em 08/09: barrava "Mawwal Malek Eau de
+  // Parfum Unissex", perfume arabe que e item legitimo de canal feminino. Em
+  // roupa nao faz falta — a exigencia de marcacao feminina continua pegando.
+  assert.match(String(motivo("Moletom Canguru Liso Algodao Unissex", ["fashion"])), /marcacao de publico/);
+  assert.equal(motivo("Mawwal Malek Eau De Parfum Unissex Perfume Arabe 100ml", ["beauty"]), null);
 });

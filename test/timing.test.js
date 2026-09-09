@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   BURST_WINDOWS, burstCapacity, currentBurst, dayCurve,
-  effectiveInterval, hourWeight, intervalFactor, isDeadHour
+  effectiveInterval, hourWeight, intervalFactor, isDeadHour, burstsOutsideWindow
 } from "../src/domain/timing.js";
 
 // Horario de Brasilia = UTC-3.
@@ -74,4 +74,13 @@ test("a hora vem do fuso brasileiro, nao do da maquina", () => {
   assert.equal(currentBurst(new Date("2026-09-02T22:00:00Z"))?.rotulo, "noite-1");
   // 19:00 UTC = 16:00 BRT: rajada da tarde.
   assert.equal(currentBurst(new Date("2026-09-02T19:00:00Z"))?.rotulo, "tarde-3");
+});
+
+test("denuncia as rajadas que a janela do agendador silencia", () => {
+  // O padrao antigo (8h-23h) matava as rajadas das 6h e das 23h: a checagem da
+  // fila e `hour < endHour`, entao a hora 23 fica de fora mesmo com endHour 23.
+  assert.deepEqual(burstsOutsideWindow(8, 23).map((j) => j.hora), [6, 23]);
+  assert.deepEqual(burstsOutsideWindow(6, 24), [], "6h-24h cobre as doze rajadas");
+  assert.deepEqual(burstsOutsideWindow(0, 24), [], "janela aberta nao silencia nada");
+  assert.equal(burstsOutsideWindow(13, 18).length, 8, "janela estreita silencia oito");
 });
