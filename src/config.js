@@ -10,6 +10,10 @@ export function loadConfig(env = process.env) {
   );
   return {
     port: int(env.PORT, 3000),
+    // Escuta so no proprio servidor por padrao. O painel publica nos SEUS grupos
+    // e canais: aberto na rede, e a operacao inteira na mao de quem varrer a porta.
+    // Em servidor o acesso e por tunel SSH. Para expor de proposito, HOST=0.0.0.0.
+    host: env.HOST ?? "127.0.0.1",
     appBaseUrl: env.APP_BASE_URL ?? "http://localhost:3000",
     adminToken: env.ADMIN_TOKEN ?? "development-only-token",
     dataFile: env.DATA_FILE ?? new URL("../data/store.json", import.meta.url),
@@ -29,7 +33,11 @@ export function loadConfig(env = process.env) {
     allowUntaggedLinks: bool(env.ALLOW_UNTAGGED_LINKS, false),
     affiliate: {
       allowParamLinks: bool(env.ALLOW_PARAM_LINKS, true),
-      extensionTimeoutMinutes: int(env.AFFILIATE_EXTENSION_TIMEOUT_MINUTES, 10)
+      extensionTimeoutMinutes: int(env.AFFILIATE_EXTENSION_TIMEOUT_MINUTES, 10),
+      // Quantos pedidos a extensao pode ter na fila antes de o link passar a
+      // sair por parametros. 0 desliga a valvula e volta a esperar a extensao
+      // sempre — o que so faz sentido em volume baixo.
+      extensionBacklogLimit: int(env.AFFILIATE_EXTENSION_BACKLOG_LIMIT, 40)
     },
     ingestion: {
       enabled: bool(env.INGESTION_ENABLED, true),
@@ -47,8 +55,15 @@ export function loadConfig(env = process.env) {
       // decide o canal e o julgamento de publico, e ali o modelo erra com pressa.
       effort: env.AI_CLASSIFIER_EFFORT ?? "high",
       batchSize: int(env.AI_CLASSIFIER_BATCH_SIZE, 25),
+      // Lotes simultaneos. A saida domina o custo do token, entao paralelizar
+      // acelera sem encarecer; o teto existe so para nao bater no limite de
+      // requisicoes da API.
+      concurrency: int(env.AI_CLASSIFIER_CONCURRENCY, 6),
       // Cada produto se paga uma vez por mes, nao a cada rodada de ingestao.
-      memoryDays: int(env.AI_CLASSIFIER_MEMORY_DAYS, 30)
+      memoryDays: int(env.AI_CLASSIFIER_MEMORY_DAYS, 30),
+      // Quantas decisoes cabem no cache. Precisa cobrir varios dias de coleta:
+      // cache que roda em menos de 24h faz pagar de novo pelo mesmo titulo.
+      memoryEntries: int(env.AI_CLASSIFIER_MEMORY_ENTRIES, 120_000)
     },
     freshness: {
       minutes: int(env.PRICE_FRESHNESS_MINUTES, 25),
@@ -63,7 +78,8 @@ export function loadConfig(env = process.env) {
     retention: {
       publicationDays: int(env.RETENTION_PUBLICATION_DAYS, 90),
       queueDays: int(env.RETENTION_QUEUE_DAYS, 7),
-      maxOffers: int(env.RETENTION_MAX_OFFERS, 5000)
+      maxOffers: int(env.RETENTION_MAX_OFFERS, 5000),
+      pruneIntervalMinutes: int(env.RETENTION_PRUNE_INTERVAL_MINUTES, 60)
     },
     limits: {
       maxPostsPerChannelPerDay: int(env.MAX_POSTS_PER_CHANNEL_PER_DAY, 40),
@@ -72,6 +88,11 @@ export function loadConfig(env = process.env) {
       groupMinutesBetweenPosts: int(env.GROUP_MINUTES_BETWEEN_POSTS, 45),
       deduplicationHours: int(env.DEDUPLICATION_HOURS, 24),
       republishCooldownDays: int(env.REPUBLISH_COOLDOWN_DAYS, 30),
+      // Quantos posts um destino solta de uma vez quando chega a vez dele. 1 e o
+      // gotejamento de sempre; acima disso o intervalo passa a valer para a
+      // RAJADA inteira, nao para cada post. E o padrao de destino novo — quem
+      // manda no dia a dia e o `burstSize` gravado em cada destino.
+      postsPerBurst: int(env.POSTS_PER_BURST, 1),
       minMinutesFloor: int(env.MIN_MINUTES_BETWEEN_POSTS_FLOOR, 3)
     },
     zapi: {
@@ -101,11 +122,21 @@ export function assertSafeConfig(config) {
   if (config.freshness.maxAgeHours < 1) throw new Error("QUEUE_MAX_AGE_HOURS deve ser pelo menos 1");
   if (config.freshness.priceRiseTolerance < 0 || config.freshness.priceRiseTolerance >= 1) throw new Error("PRICE_RISE_TOLERANCE deve estar entre 0 e 1");
   if (config.limits.republishCooldownDays < 0) throw new Error("REPUBLISH_COOLDOWN_DAYS nao pode ser negativo");
+  // Publicacao podada antes do fim do cooldown reabre a porta para republicar o
+  // mesmo produto — a regra existiria no codigo e nao valeria na pratica.
+  if (config.retention.publicationDays <= config.limits.republishCooldownDays) {
+    throw new Error(`RETENTION_PUBLICATION_DAYS (${config.retention.publicationDays}) precisa ser maior que REPUBLISH_COOLDOWN_DAYS (${config.limits.republishCooldownDays}), senao o produto volta a se repetir`);
+  }
+  if (config.retention.pruneIntervalMinutes < 1) throw new Error("RETENTION_PRUNE_INTERVAL_MINUTES deve ser pelo menos 1");
   if (config.ingestion.memoryHours < 1) throw new Error("INGESTION_MEMORY_HOURS deve ser pelo menos 1");
   if (config.ingestion.priceDropTolerance < 0 || config.ingestion.priceDropTolerance >= 1) throw new Error("INGESTION_PRICE_DROP_TOLERANCE deve estar entre 0 e 1");
   // Ligar a IA sem chave nao quebra nada — cai na regra em silencio. E o silencio
   // e o problema: quem ligou acha que esta usando IA e nao esta.
   if (config.ai.enabled && !config.ai.apiKey) throw new Error("Defina ANTHROPIC_API_KEY antes de ligar AI_CLASSIFIER_ENABLED");
-  if (config.ai.batchSize < 1 || config.ai.batchSize > 50) throw new Error("AI_CLASSIFIER_BATCH_SIZE deve estar entre 1 e 50");
+  // O teto era 50, de quando a coleta varria uma vitrine por rodada. Varrendo
+  // nove, o lote maior e o que segura o tempo da rodada: sao menos idas a API
+  // pelo mesmo numero de titulos, e a saida (que domina o custo) nao muda.
+  if (config.ai.batchSize < 1 || config.ai.batchSize > 100) throw new Error("AI_CLASSIFIER_BATCH_SIZE deve estar entre 1 e 100");
+  if (config.ai.concurrency < 1 || config.ai.concurrency > 20) throw new Error("AI_CLASSIFIER_CONCURRENCY deve estar entre 1 e 20");
   if (!["low", "medium", "high", "xhigh", "max"].includes(config.ai.effort)) throw new Error("AI_CLASSIFIER_EFFORT deve ser low, medium, high, xhigh ou max");
 }

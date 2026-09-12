@@ -24,24 +24,30 @@
 
 const FUSO = "America/Sao_Paulo";
 
-// Doze janelas de uma hora, das 6h as 23h: quatro de manha, quatro a tarde,
-// quatro a noite. Espalhadas dentro de cada periodo para nao empilhar dois
-// disparos seguidos — entre uma janela e a proxima ha pelo menos uma hora de
-// silencio, que e o que separa "canal ativo" de "canal que so despeja".
-export const BURST_WINDOWS = [
-  { hora: 6, rotulo: "manha-1" },
-  { hora: 8, rotulo: "manha-2" },
-  { hora: 9, rotulo: "manha-3" },
-  { hora: 11, rotulo: "manha-4" },
-  { hora: 13, rotulo: "tarde-1" },
-  { hora: 14, rotulo: "tarde-2" },
-  { hora: 16, rotulo: "tarde-3" },
-  { hora: 17, rotulo: "tarde-4" },
-  { hora: 19, rotulo: "noite-1" },
-  { hora: 20, rotulo: "noite-2" },
-  { hora: 22, rotulo: "noite-3" },
-  { hora: 23, rotulo: "noite-4" }
-];
+// As 24 horas do dia sao janela: operacao full time, por decisao do dono do
+// canal em 11/09/2026, junto com a subida para 600 posts por destino.
+//
+// A historia deste numero, porque ele so anda para cima e vale saber o que foi
+// trocado: eram 12 janelas alternadas (um canal, 60 posts/dia), viraram 16
+// coladas, depois 18 comecando as 5h, agora 24.
+//
+// O QUE SE PERDE: o silencio da madrugada existia por um motivo. Mensagem de
+// oferta as 3h chega com notificacao no telefone de quem dorme, e o custo disso
+// nao aparece em nenhuma metrica do sistema — aparece na saida do grupo. Nada no
+// codigo consegue medir isso; quem decide e quem conhece a audiencia.
+//
+// Cuidado ao mexer: a janela do agendador (PUBLISHING_START_HOUR/END_HOUR) e um
+// segundo portao, e se ela for mais estreita que estas janelas as rajadas de fora
+// morrem sem nenhuma mensagem de erro — e o que `burstsOutsideWindow` denuncia na
+// partida. Com 24 janelas ela precisa ser 0h-24h.
+//
+// Quem espaca as mensagens dentro da hora e o `minMinutesBetweenPosts` de cada
+// destino, que e por canal e portanto nao se acumula entre eles.
+export const BURST_WINDOWS = Array.from({ length: 24 }, (_, passo) => {
+  const hora = passo;
+  const periodo = hora < 12 ? "manha" : hora < 18 ? "tarde" : "noite";
+  return { hora, rotulo: `${periodo}-${hora}h` };
+});
 
 const partes = (date) => {
   const hora = Number(new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", hourCycle: "h23", timeZone: FUSO }).format(date));
@@ -100,7 +106,10 @@ export function burstCapacity(destinations = []) {
     .filter((d) => d.active !== false)
     // Sem o piso de 1 minuto: um destino a 0.1 min rende 600 por hora, e a conta
     // precisa dizer isso em vez de mentir 60.
-    .reduce((total, d) => total + Math.floor(60 / Math.max(0.01, Number(d.minMinutesBetweenPosts) || 0.01)), 0);
+    // Cada liberacao solta `burstSize` posts, nao um. Sem isto a conta do painel
+    // subestima em 15x um grupo em rajada.
+    .reduce((total, d) => total
+      + Math.floor(60 / Math.max(0.01, Number(d.minMinutesBetweenPosts) || 0.01)) * Math.max(1, Number(d.burstSize) || 1), 0);
   return { porRajada, porDia: porRajada * BURST_WINDOWS.length, rajadas: BURST_WINDOWS.length };
 }
 

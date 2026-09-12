@@ -177,3 +177,119 @@ test("general nao convive com nicho de verdade", async () => {
   assert.deepEqual(decisoes.get(productKey(ofertas[2])).nicheIds, ["home", "beauty"], "no maximo dois");
   assert.deepEqual(decisoes.get(productKey(ofertas[3])).nicheIds, ["home"], "nicho inexistente e descartado");
 });
+
+test("os lotes vao em paralelo, respeitando o teto de chamadas simultaneas", async () => {
+  const titulos = Array.from({ length: 12 }, (_, i) => oferta(`Produto ${i}`));
+  let emVoo = 0;
+  let pico = 0;
+  const client = {
+    messages: {
+      create: async ({ messages }) => {
+        emVoo += 1;
+        pico = Math.max(pico, emVoo);
+        await new Promise((r) => setTimeout(r, 20));
+        emVoo -= 1;
+        const quantos = (messages[0].content.match(/^\d+\./gm) ?? []).length;
+        return {
+          content: [{
+            type: "tool_use", name: "classificar_anuncios",
+            input: { itens: Array.from({ length: quantos }, (_, i) => ({ i: i + 1, nicheIds: ["home"], servePublico: true, motivo: "ok" })) }
+          }]
+        };
+      }
+    }
+  };
+  const config = { ai: { ...CONFIG.ai, batchSize: 3, concurrency: 2 } };
+  const classifier = new AiClassifier({ store: storeFalso(), config, client, clock: () => AGORA });
+
+  const inicio = Date.now();
+  const resultado = await classifier.classify(titulos);
+  const duracao = Date.now() - inicio;
+
+  assert.equal(resultado.size, 12);
+  assert.equal(pico, 2, "nao pode passar do teto de simultaneas");
+  // Quatro lotes de 20ms: em fila indiana seriam ~80ms; a dois por vez, ~40ms.
+  assert.ok(duracao < 75, `esperava ganho de paralelismo, levou ${duracao}ms`);
+});
+
+test("sem teto configurado os lotes voltam a ser um de cada vez", async () => {
+  const titulos = Array.from({ length: 6 }, (_, i) => oferta(`Item ${i}`));
+  let emVoo = 0;
+  let pico = 0;
+  const client = {
+    messages: {
+      create: async ({ messages }) => {
+        emVoo += 1;
+        pico = Math.max(pico, emVoo);
+        await new Promise((r) => setTimeout(r, 5));
+        emVoo -= 1;
+        const quantos = (messages[0].content.match(/^\d+\./gm) ?? []).length;
+        return {
+          content: [{
+            type: "tool_use", name: "classificar_anuncios",
+            input: { itens: Array.from({ length: quantos }, (_, i) => ({ i: i + 1, nicheIds: ["home"], servePublico: true, motivo: "ok" })) }
+          }]
+        };
+      }
+    }
+  };
+  const config = { ai: { ...CONFIG.ai, batchSize: 2 } };
+  const classifier = new AiClassifier({ store: storeFalso(), config, client, clock: () => AGORA });
+  await classifier.classify(titulos);
+  assert.equal(pico, 1, "um undefined em concurrency nao pode virar paralelismo ilimitado");
+});
+
+test("o cache guarda o motivo so de quem foi barrado", async () => {
+  const store = storeFalso();
+  const client = {
+    messages: {
+      create: async ({ messages }) => {
+        const quantos = (messages[0].content.match(/^\d+\./gm) ?? []).length;
+        return {
+          content: [{
+            type: "tool_use", name: "classificar_anuncios",
+            input: {
+              itens: Array.from({ length: quantos }, (_, i) => ({
+                i: i + 1, nicheIds: ["home"],
+                servePublico: i === 0,
+                motivo: i === 0 ? "serve ao canal" : "produto masculino"
+              }))
+            }
+          }]
+        };
+      }
+    }
+  };
+  const config = { ai: { ...CONFIG.ai, batchSize: 10, concurrency: 1 } };
+  const classifier = new AiClassifier({ store, config, client, clock: () => AGORA });
+  await classifier.classify([oferta("Aprovado"), oferta("Barrado")]);
+
+  const guardadas = store.state.classifications;
+  assert.equal(guardadas.length, 2);
+  const aprovado = guardadas.find((c) => c.decisao.servePublico === true);
+  const barrado = guardadas.find((c) => c.decisao.servePublico === false);
+  assert.equal(aprovado.decisao.motivo, undefined, "aprovado nao precisa de motivo guardado");
+  assert.ok(barrado.decisao.motivo, "o bloqueio precisa poder se explicar");
+});
+
+test("o teto do cache e configuravel e nao descarta cedo demais", async () => {
+  const store = storeFalso();
+  store.state.classifications = Array.from({ length: 50 }, (_, i) => ({
+    key: `antiga-${i}`, decisao: { nicheIds: ["home"], servePublico: true }, at: AGORA.toISOString()
+  }));
+  const client = {
+    messages: {
+      create: async ({ messages }) => {
+        const quantos = (messages[0].content.match(/^\d+\./gm) ?? []).length;
+        return { content: [{ type: "tool_use", name: "classificar_anuncios",
+          input: { itens: Array.from({ length: quantos }, (_, i) => ({ i: i + 1, nicheIds: ["home"], servePublico: true, motivo: "ok" })) } }] };
+      }
+    }
+  };
+  const config = { ai: { ...CONFIG.ai, batchSize: 5, concurrency: 1, memoryEntries: 52 } };
+  const classifier = new AiClassifier({ store, config, client, clock: () => AGORA });
+  await classifier.classify([oferta("Nova A"), oferta("Nova B")]);
+  assert.equal(store.state.classifications.length, 52, "respeita o teto configurado");
+  // As duas novas sobrevivem; o teto corta as mais antigas.
+  assert.ok(store.state.classifications.some((c) => c.key.includes("Nova A")));
+});

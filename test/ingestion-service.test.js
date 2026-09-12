@@ -228,3 +228,139 @@ test("sem destino ativo a coleta nao e limitada por capacidade", async () => {
   assert.equal(capacity, 0);
   assert.equal(room, Number.POSITIVE_INFINITY);
 });
+
+test("varre varias categorias na mesma rodada e avanca o cursor por todas", async () => {
+  const porCategoria = ({ category }) => [product({ externalId: `${category}-1`, title: `Item de ${category}` })];
+  const { service, store, source, apply } = build({
+    offers: porCategoria,
+    settings: { enabled: true, minDiscount: 20, categories: ["MLB1", "MLB2", "MLB3", "MLB4"], categoriesPerRun: 3 }
+  });
+  await apply();
+
+  const [run] = (await service.run()).runs;
+  assert.deepEqual(run.categories, ["MLB1", "MLB2", "MLB3"]);
+  assert.deepEqual(source.calls.map((c) => c.category), ["MLB1", "MLB2", "MLB3"]);
+  assert.equal(run.collected, 3);
+  // O cursor anda o tamanho da rodada: a proxima comeca onde esta parou e da a
+  // volta, em vez de repetir a vitrine que acabou de sair.
+  assert.equal(store.state.sources[0].cursor, 3);
+
+  source.calls.length = 0;
+  const [segunda] = (await service.run()).runs;
+  assert.deepEqual(segunda.categories, ["MLB4", "MLB1", "MLB2"]);
+});
+
+test("o mesmo produto em duas vitrines e coletado uma vez so", async () => {
+  const { service, apply } = build({
+    offers: () => [product({ externalId: "REPETIDO" })],
+    settings: { enabled: true, minDiscount: 20, categories: ["MLB1", "MLB2", "MLB3"], categoriesPerRun: 3 }
+  });
+  await apply();
+  const [run] = (await service.run()).runs;
+  assert.equal(run.collected, 1);
+});
+
+test("uma vitrine fora do ar nao derruba a rodada inteira", async () => {
+  const offers = ({ category }) => {
+    if (category === "MLB2") throw new Error("503 do marketplace");
+    return [product({ externalId: `${category}-1` })];
+  };
+  const { service, apply } = build({
+    offers,
+    settings: { enabled: true, minDiscount: 20, categories: ["MLB1", "MLB2", "MLB3"], categoriesPerRun: 3 }
+  });
+  await apply();
+  const [run] = (await service.run()).runs;
+  assert.equal(run.collected, 2);
+  assert.equal(run.errors.length, 1);
+  assert.match(run.errors[0], /MLB2: 503 do marketplace/);
+});
+
+test("a colheita da extensao passa pelos mesmos filtros da vitrine", async () => {
+  const { service, enqueued, store, apply } = build({
+    offers: [],
+    settings: { enabled: true, minDiscount: 20, minSold: 0, minRating: 0, maxPrice: 1000 }
+  });
+  await apply();
+  store.state.destinations.push({ id: "d1", active: true, nicheIds: ["beauty", "general"], maxDailyPosts: 100, minMinutesBetweenPosts: 5 });
+
+  const r = await service.harvest({ produtos: [
+    // bom: 50% de desconto
+    { externalId: "MLB111", title: "Serum Facial Vitamina C 30ml", currentPrice: 50, originalPrice: 100,
+      imageUrl: "https://cdn/x.jpg", productUrl: "https://www.mercadolivre.com.br/p/MLB111", officialStore: true, sellerName: "NATURA" },
+    // ruim: sem desconto, tem que ser recusado pelo MESMO filtro da vitrine
+    { externalId: "MLB222", title: "Creme Qualquer", currentPrice: 99, originalPrice: 100,
+      imageUrl: "https://cdn/y.jpg", productUrl: "https://www.mercadolivre.com.br/p/MLB222" }
+  ] });
+
+  assert.equal(r.collected, 2);
+  assert.equal(r.enqueued, 1, "so o que passa no filtro entra");
+  assert.equal(enqueued.length, 1);
+  assert.equal(enqueued[0].externalId, "MLB111");
+  // O selo de loja oficial sobrevive ate a fila: e ele que vira credibilidade
+  // na mensagem e bonus na pontuacao.
+  assert.equal(enqueued[0].officialStore, true);
+  assert.equal(enqueued[0].sellerName, "NATURA");
+});
+
+test("colheita vazia nao faz nada e nao quebra", async () => {
+  const { service, apply } = build({ offers: [], settings: { enabled: true } });
+  await apply();
+  assert.deepEqual(await service.harvest({ produtos: [] }), { recebidos: 0, enqueued: 0, rejected: 0 });
+  assert.deepEqual(await service.harvest({}), { recebidos: 0, enqueued: 0, rejected: 0 });
+});
+
+test("a paginacao da listagem segue o padrao _Desde_ do Mercado Livre", () => {
+  // Replica do que o background monta. Fica no teste para que a regra de
+  // paginacao do ML nao dependa so de um comentario na extensao.
+  const paginasDe = (url, quantas) => {
+    const [base, fragmento] = url.split("#");
+    const limpa = base.replace(/\/$/, "");
+    const paginas = [url];
+    for (let i = 1; i < quantas; i += 1) {
+      paginas.push(`${limpa}_Desde_${i * 50 + 1}${fragmento ? "#" + fragmento : ""}`);
+    }
+    return paginas;
+  };
+
+  assert.deepEqual(paginasDe("https://lista.mercadolivre.com.br/loja/natura/_Discount_20-100", 3), [
+    "https://lista.mercadolivre.com.br/loja/natura/_Discount_20-100",
+    "https://lista.mercadolivre.com.br/loja/natura/_Discount_20-100_Desde_51",
+    "https://lista.mercadolivre.com.br/loja/natura/_Discount_20-100_Desde_101"
+  ]);
+  // A barra final nao pode virar "_Desde_" colado numa barra.
+  assert.equal(paginasDe("https://lista.mercadolivre.com.br/loja/vult/", 2)[1],
+    "https://lista.mercadolivre.com.br/loja/vult_Desde_51");
+  // Uma pagina so continua sendo uma pagina.
+  assert.equal(paginasDe("https://x/y", 1).length, 1);
+});
+
+test("o piso de vendas pode ser afrouxado so para um nicho", async () => {
+  // A colheita das lojas de marca de beleza trazia 1.200 produtos e enfileirava 0:
+  // produto de loja oficial raramente exibe "+150 vendidos" no card. Afrouxar so
+  // beleza deixa o #5 respirar sem encher a fila dos outros grupos com item que
+  // eles nunca publicariam.
+  const { service, enqueued, apply } = build({
+    offers: [
+      product({ externalId: "B1", title: "Serum Facial Vitamina C 30ml", soldCount: 50 }),
+      product({ externalId: "E1", title: "Fone de ouvido bluetooth", soldCount: 50 })
+    ],
+    settings: { enabled: true, minDiscount: 20, minSold: 150, minSoldByNiche: { beauty: 30 } }
+  });
+  await apply();
+  const [run] = (await service.run()).runs;
+  assert.equal(run.enqueued, 1, "so a de beleza entra");
+  assert.equal(enqueued[0].externalId, "B1");
+  assert.equal(run.rejectedBy["pouca gente comprou esse produto"], 1);
+});
+
+test("sem override por nicho, o piso da fonte continua valendo para todos", async () => {
+  const { service, enqueued, apply } = build({
+    offers: [product({ externalId: "B1", title: "Serum Facial Vitamina C 30ml", soldCount: 50 })],
+    settings: { enabled: true, minDiscount: 20, minSold: 150 }
+  });
+  await apply();
+  const [run] = (await service.run()).runs;
+  assert.equal(run.enqueued, 0);
+  assert.equal(enqueued.length, 0);
+});

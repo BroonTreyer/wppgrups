@@ -78,18 +78,31 @@ export class JsonStore {
   }
 
   async update(mutator) {
-    this.writeQueue = this.writeQueue.then(async () => {
+    // A fila de escrita serializa os mutators, mas ela NAO pode carregar o erro
+    // de um deles adiante: encadear direto deixa `writeQueue` numa promise
+    // rejeitada, e a partir dai TODA escrita seguinte falha com o erro alheio —
+    // o store inteiro para de gravar por causa de um unico mutator com defeito.
+    // Foi o que aconteceu em 10/09/2026: um `selected.status` em item removido
+    // derrubou publicacao, ingestao e resgate de link ao mesmo tempo, todos
+    // reportando "Cannot set properties of undefined".
+    const resultado = this.writeQueue.then(async () => {
       const draft = structuredClone(await this.load());
       const result = await mutator(draft);
       await this.persist(draft);
       this.cache = draft;
       return result;
     });
-    return this.writeQueue;
+    // O elo da corrente sobrevive ao erro; quem chamou continua recebendo-o.
+    this.writeQueue = resultado.then(() => undefined, () => undefined);
+    return resultado;
   }
 
   async persist(state) {
-    const payload = JSON.stringify(state, null, 2);
+    // Sem indentacao de proposito. Os dois espacos por nivel custavam 27% do
+    // arquivo — com 1.200 posts por dia e ~15 mil gravacoes, sao cerca de 32 GB
+    // escritos no disco todo dia so para enfeitar um arquivo que nenhum humano le
+    // direto. Para inspecionar: `node -e "console.log(JSON.stringify(require('./data/store.json'),null,2))"`.
+    const payload = JSON.stringify(state);
     await this.fs.mkdir(dirname(this.file), { recursive: true });
     const temp = `${this.file}.${process.pid}.tmp`;
     await this.fs.writeFile(temp, payload, "utf8");

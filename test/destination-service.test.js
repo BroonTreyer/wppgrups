@@ -39,3 +39,14 @@ test("desativa destino que deixou de aparecer na sincronizacao", async () => {
   assert.equal(destination.active, false);
   assert.equal(destination.available, false);
 });
+
+test("burstSize so aceita inteiro entre 1 e 50", async () => {
+  const store = new MemoryStore();
+  store.state.destinations.push({ id: "g", type: "group", burstSize: 1 });
+  const service = new DestinationService({ store, zapi: {}, config: { limits: {} } });
+  await service.configure("g", { burstSize: 15 });
+  assert.equal(store.state.destinations[0].burstSize, 15);
+  await assert.rejects(() => service.configure("g", { burstSize: 0 }), /burstSize/);
+  await assert.rejects(() => service.configure("g", { burstSize: 51 }), /burstSize/);
+  assert.equal(store.state.destinations[0].burstSize, 15, "pedido invalido nao altera o destino");
+});

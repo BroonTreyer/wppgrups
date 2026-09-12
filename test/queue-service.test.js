@@ -305,3 +305,49 @@ test("sem destino ativo nenhum, a fila continua aceitando", async () => {
   assert.ok(!resultado.skipped);
   assert.equal(store.state.queue.length, 1);
 });
+
+// --- porta de entrada: produto ja publicado ---------------------------------
+
+const filaCom = (publications) => {
+  const store = new MemoryStore([{ ...DESTINO, nicheIds: ["general"] }]);
+  store.state.publications = publications;
+  const service = new QueueService({
+    store,
+    config: { ...config, limits: { ...config.limits, republishCooldownDays: 30 } },
+    clock: () => new Date("2026-09-12T00:00:00Z"),
+    publicationService: publisher()
+  });
+  return { store, service };
+};
+
+const publicacaoDe = (diasAtras) => ([{
+  id: "antiga", destinationId: "canal", status: "sent",
+  productKey: `${SAMPLE_OFFER.marketplace}:${SAMPLE_OFFER.externalId}`,
+  createdAt: new Date(Date.UTC(2026, 8, 12) - diasAtras * 86400000).toISOString()
+}]);
+
+test("produto publicado dentro do cooldown nao volta para a fila", async () => {
+  // Com INGESTION_MEMORY_HOURS curto — para o preco reiniciar a cada dia — a
+  // ingestao volta a oferecer o que ja saiu. Sem esta porta ele entraria, ficaria
+  // barrado pelo cooldown so na hora de publicar e ocuparia vaga ate expirar: a
+  // ingestao veria estoque que nao existe e pararia de coletar.
+  const { store, service } = filaCom(publicacaoDe(2));
+  const resultado = await service.enqueue({ ...SAMPLE_OFFER, nicheIds: ["general"] });
+  assert.equal(resultado.skipped, true);
+  assert.match(resultado.reason, /ja publicado recentemente/);
+  assert.equal(store.state.queue.length, 0);
+});
+
+test("passado o cooldown, o mesmo produto pode voltar", async () => {
+  const { store, service } = filaCom(publicacaoDe(45));
+  const resultado = await service.enqueue({ ...SAMPLE_OFFER, nicheIds: ["general"] });
+  assert.notEqual(resultado.skipped, true);
+  assert.equal(store.state.queue.length, 1);
+});
+
+test("produto nunca publicado entra normalmente", async () => {
+  const { store, service } = filaCom([]);
+  const resultado = await service.enqueue({ ...SAMPLE_OFFER, nicheIds: ["general"] });
+  assert.notEqual(resultado.skipped, true);
+  assert.equal(store.state.queue.length, 1);
+});

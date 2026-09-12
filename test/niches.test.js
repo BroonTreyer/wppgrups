@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { inferNiches } from "../src/domain/niches.js";
+import { inferNiches, CATEGORY_NICHE } from "../src/domain/niches.js";
+import { ML_CATEGORIES } from "../src/sources/mercado-livre.js";
 
 test("classifica uma TV em eletronicos e ofertas gerais", () => {
   assert.deepEqual(inferNiches({ title: "Smart TV 4K", category: "TV" }), ["electronics", "general"]);
@@ -189,4 +190,28 @@ test("movel de setup nao e movel de casa", () => {
                         "Cadeira De Escritorio Ergonomica Apoio Lombar"]) {
     assert.ok(inferNiches({ title: titulo }).includes("home"), titulo);
   }
+});
+
+test("as vitrines novas tem nicho mapeado, senao a oferta chega cega", () => {
+  const casos = [
+    ["Construcao", "tools-auto"],
+    ["Industria e comercio", "tools-auto"],
+    ["Bebes", "kids"],
+    ["Animais", "market"],
+    ["Saude", "health"],
+    ["Joias e relogios", "fashion"],
+    ["Cameras e acessorios", "electronics"],
+    ["Instrumentos musicais", "general"]
+  ];
+  for (const [categoria, esperado] of casos) {
+    assert.equal(CATEGORY_NICHE[categoria.toLowerCase()], esperado, `${categoria} sem mapa`);
+  }
+});
+
+test("toda categoria coletavel sabe dizer seu nicho", () => {
+  const semMapa = ML_CATEGORIES
+    .filter((c) => c.id)
+    .map((c) => c.name)
+    .filter((nome) => !CATEGORY_NICHE[nome.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase()]);
+  assert.deepEqual(semMapa, [], "categoria coletada sem nicho perde o sinal mais confiavel que existe");
 });

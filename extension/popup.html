@@ -27,8 +27,20 @@
   <label>Página do gerador de links</label>
   <input id="builderUrl" placeholder="https://www.mercadolivre.com.br/afiliados/linkbuilder">
 
+  <hr style="border:0;border-top:1px solid #243447;margin:16px 0 4px">
+  <label style="color:#59e391">Colheita nas lojas das marcas</label>
+  <p class="sub" style="margin:2px 0 6px">Uma página por linha. O servidor não consegue ler essas páginas sozinho — o seu Chrome consegue.</p>
+  <label style="display:flex;align-items:center;gap:8px;margin:6px 0">
+    <input id="harvestEnabled" type="checkbox" style="width:auto;margin:0"> Colher a cada 30 min
+  </label>
+  <label>Páginas por marca (50 produtos cada)</label>
+  <input id="harvestPages" type="number" min="1" max="10" placeholder="3">
+  <textarea id="harvestUrls" rows="4" placeholder="https://www.mercadolivre.com.br/loja/natura&#10;https://www.mercadolivre.com.br/loja/oboticario"
+    style="width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid #34485e;background:#0c151f;color:#fff;font-size:12px;font-family:inherit"></textarea>
+
   <button id="save">Salvar</button>
   <button id="run" class="secondary">Gerar links pendentes agora</button>
+  <button id="harvest" class="secondary">Colher as lojas agora</button>
 
   <div class="status" id="status">Carregando…</div>
   <script src="popup.js"></script>

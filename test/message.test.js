@@ -86,3 +86,22 @@ test("sem manchete, a mensagem abre no nome do produto", () => {
     assert.equal(primeira, "*Air Fryer 5L*", n);
   }
 });
+
+test("loja oficial da marca aparece na prova social", () => {
+  const caption = formatOfferCaption(
+    { ...SAMPLE_OFFER, sellerName: "NATURA", officialStore: true, rating: 4.8, soldLabel: "+1000 vendidos" },
+    agora, ["beauty"]
+  );
+  assert.match(caption, /🏅 NATURA · Loja oficial/);
+  // Vem antes da nota: e a informacao que decide a compra em marketplace.
+  assert.ok(caption.indexOf("NATURA") < caption.indexOf("⭐"), "loja oficial deve vir primeiro");
+});
+
+test("vendedor sem selo oficial nao vira selo na mensagem", () => {
+  const caption = formatOfferCaption(
+    { ...SAMPLE_OFFER, sellerName: "LOJA DO JOAO", officialStore: false, rating: 4.5 },
+    agora, ["beauty"]
+  );
+  assert.doesNotMatch(caption, /Loja oficial/);
+  assert.doesNotMatch(caption, /LOJA DO JOAO/);
+});

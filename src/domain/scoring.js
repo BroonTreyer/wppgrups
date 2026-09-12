@@ -68,8 +68,26 @@ export function scoreOffer(offer, options = {}) {
     + priceScore(offer.currentPrice, sweetSpot)
     + shipping
     + pix
+    + officialStoreScore(offer)
     - (isRisky(offer, options.riskyKeywords ?? []) ? 100 : 0);
   return Math.round(total);
+}
+
+/**
+ * Bonus de loja oficial da marca.
+ *
+ * Produto vendido pela propria marca tem catalogo confiavel, foto de verdade e
+ * troca garantida — num canal de achadinhos isso vale mais do que alguns pontos
+ * percentuais de desconto. O card da vitrine sempre trouxe esse selo e a coleta
+ * nao lia.
+ *
+ * E BONUS, nao filtro, de proposito: o selo do Mercado Livre tambem vai para
+ * revendedor cadastrado ("RJI UTILIDADES", "JL ELETRO"), e exigir loja oficial
+ * cortaria 71% da vitrine de Beleza. Aqui ele prioriza sem excluir.
+ */
+export const OFFICIAL_STORE_BONUS = 8;
+function officialStoreScore(offer) {
+  return offer.officialStore ? OFFICIAL_STORE_BONUS : 0;
 }
 
 export function scoreBreakdown(offer, options = {}) {
@@ -79,6 +97,7 @@ export function scoreBreakdown(offer, options = {}) {
     reputacao: Math.round(reputationScore(offer.rating)),
     desconto: Math.round(discountScore(discountPercentage(offer))),
     preco: priceScore(offer.currentPrice, sweetSpot),
+    lojaOficial: officialStoreScore(offer),
     risco: isRisky(offer, options.riskyKeywords ?? []) ? -100 : 0,
     total: scoreOffer(offer, options)
   };

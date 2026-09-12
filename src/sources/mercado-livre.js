@@ -2,6 +2,15 @@ const DEALS_URL = "https://www.mercadolivre.com.br/ofertas";
 const IMAGE_BASE = "https://http2.mlstatic.com";
 const MAX_HTML_BYTES = 4_000_000;
 
+// As vitrines que a coleta conhece. O `name` nao e enfeite: ele vira
+// `offer.category` e alimenta `CATEGORY_NICHE`, que e o sinal mais confiavel de
+// nicho que existe. Categoria fora desta lista chega sem nome e a oferta perde
+// esse sinal — em 11/09/2026 as oito novas entraram justamente por isso.
+//
+// ATENCAO: codigo de categoria que o Mercado Livre nao reconhece NAO da erro —
+// ele devolve a vitrine geral, e a coleta acha que filtrou. Antes de acrescentar
+// uma aqui, compare os ids devolvidos com os da vitrine sem filtro; se a
+// sobreposicao for alta, a categoria esta sendo ignorada.
 export const ML_CATEGORIES = [
   { id: "", name: "Todas as ofertas" },
   { id: "MLB1051", name: "Celulares e telefones" },
@@ -12,7 +21,15 @@ export const ML_CATEGORIES = [
   { id: "MLB1430", name: "Calcados, roupas e bolsas" },
   { id: "MLB1132", name: "Brinquedos e hobbies" },
   { id: "MLB1276", name: "Esportes e fitness" },
-  { id: "MLB5726", name: "Eletrodomesticos" }
+  { id: "MLB5726", name: "Eletrodomesticos" },
+  { id: "MLB1500", name: "Construcao" },
+  { id: "MLB1499", name: "Industria e comercio" },
+  { id: "MLB1384", name: "Bebes" },
+  { id: "MLB1071", name: "Animais" },
+  { id: "MLB264586", name: "Saude" },
+  { id: "MLB3937", name: "Joias e relogios" },
+  { id: "MLB1039", name: "Cameras e acessorios" },
+  { id: "MLB1182", name: "Instrumentos musicais" }
 ];
 
 const balancedObject = (text, open) => {
@@ -111,6 +128,29 @@ const imageUrl = (card) => {
   return pictureId ? `${IMAGE_BASE}/D_Q_NP_2X_${encodeURIComponent(pictureId)}-O.jpg` : null;
 };
 
+/**
+ * Quem vende, e se e loja oficial da marca.
+ *
+ * O card sempre trouxe isso e a coleta nunca leu. O componente `seller` traz o
+ * nome do vendedor num `label`, e o selo de loja oficial vem como o icone
+ * `icon_cockade` (alt_text "Loja oficial") ao lado. Ou seja: da para saber que
+ * um produto e da NATURA oficial sem abrir a pagina da marca — que carrega por
+ * JavaScript e nao serve para raspagem.
+ *
+ * Serve a dois propositos: filtrar so marca oficial (catalogo confiavel, sem
+ * revenda duvidosa) e dar nome a marca para o canal poder priorizar as suas.
+ */
+const seller = (card) => {
+  const bloco = component(card, "seller")?.seller;
+  if (!bloco) return { sellerName: null, officialStore: false };
+  const valores = bloco.values ?? [];
+  const nome = valores.find((item) => item.type === "label")?.label?.text?.trim() ?? null;
+  const oficial = valores.some((item) =>
+    item.type === "icon" && (item.icon?.icon_id === "icon_cockade" || /loja oficial/i.test(item.icon?.alt_text ?? ""))
+  );
+  return { sellerName: nome, officialStore: oficial };
+};
+
 export function normalizeCard(card) {
   const externalId = card?.metadata?.id;
   const title = component(card, "title")?.title?.text?.trim();
@@ -121,10 +161,13 @@ export function normalizeCard(card) {
   if (!externalId || !title || !affiliateUrl || !image || !Number.isFinite(currentPrice) || currentPrice <= 0) return null;
   const original = previousPrice(price);
   const { rating, soldLabel, soldCount } = review(card);
+  const { sellerName, officialStore } = seller(card);
   return {
     externalId: String(externalId),
     marketplace: "Mercado Livre",
     title,
+    sellerName,
+    officialStore,
     currentPrice,
     originalPrice: original && original > currentPrice ? original : null,
     paymentMethod: price?.unit_description?.text ?? null,
@@ -171,31 +214,69 @@ export class MercadoLivreSource {
   get id() { return MercadoLivreSource.id; }
 
   async collect({ pages = 2, category = "" } = {}) {
-    // A vitrine vai ate a pagina ~12 por categoria (medido em 09/09: a 11 ainda traz
-    // 43 ineditos, a 15 ja repete). O teto de 10 cortava conteudo real.
-    const total = Math.min(Math.max(Number(pages) || 1, 1), 15);
+    // Ate onde a vitrine vai depende da categoria: medido em 11/09/2026, Beleza
+    // seca na pagina 15 e Casa so na 23. O teto de 15 que existia aqui cortava
+    // conteudo real — Casa entrega 1.015 produtos, e 15 paginas viam metade.
+    const total = Math.min(Math.max(Number(pages) || 1, 1), 40);
     const categoryName = ML_CATEGORIES.find((item) => item.id === category)?.name ?? null;
     const offers = [];
     const seen = new Set();
-    for (let page = 1; page <= total; page += 1) {
-      const found = parseDealsPage(await this.fetchPage(page, category));
-      if (!found.length) break;
-      for (const offer of found) {
-        if (seen.has(offer.externalId)) continue;
-        seen.add(offer.externalId);
-        offers.push({ ...offer, ...(categoryName ? { category: categoryName } : {}), sourceContext: { category } });
+
+    // Em blocos paralelos, nao uma pagina de cada vez. Dezessete vitrines a 40
+    // paginas sao ate 680 idas ao Mercado Livre; em fila indiana a rodada passava
+    // de 12 minutos e a coleta virava o gargalo do dia inteiro. O bloco mantem a
+    // ordem das paginas (que e a ordem de relevancia da vitrine) e continua
+    // parando assim que uma pagina vem vazia.
+    const BLOCO = 5;
+    for (let inicio = 1; inicio <= total; inicio += BLOCO) {
+      const numeros = [];
+      for (let p = inicio; p < inicio + BLOCO && p <= total; p += 1) numeros.push(p);
+      const paginas = await Promise.all(numeros.map(async (numero) => {
+        try {
+          return parseDealsPage(await this.fetchPage(numero, category));
+        } catch (error) {
+          // Uma pagina que falha nao pode levar junto as outras quatro do bloco.
+          return error;
+        }
+      }));
+      // ...mas se o bloco INTEIRO falhou, o problema nao e a pagina: e o
+      // marketplace recusando a consulta (429, anti-bot, vitrine fora do ar).
+      // Engolir isso deixaria o sistema cego justamente no dia em que o ML
+      // fechar a porta — a coleta voltaria vazia como se nao houvesse oferta.
+      const todasFalharam = paginas.every((item) => item instanceof Error);
+      if (todasFalharam) throw paginas[0];
+
+      let acabou = false;
+      for (const [indice, found] of paginas.entries()) {
+        if (found instanceof Error) continue;
+        if (!found.length) { acabou = true; break; }
+        for (const offer of found) {
+          if (seen.has(offer.externalId)) continue;
+          seen.add(offer.externalId);
+          // `page` e o que permite a revalidacao procurar a oferta ONDE ELA ESTA.
+          // Sem isso a revalidacao lia 2 paginas, nao achava o que veio da pagina
+          // 12 e declarava "saiu da vitrine" uma oferta perfeitamente viva.
+          offers.push({ ...offer, ...(categoryName ? { category: categoryName } : {}), sourceContext: { category, page: numeros[indice] } });
+        }
       }
+      if (acabou) break;
     }
     return offers;
   }
 
   async refreshMany(offers, { pages = 2 } = {}) {
-    const categories = [...new Set(offers.map((offer) => offer.sourceContext?.category ?? ""))];
-    // A vitrine vai ate a pagina ~12 por categoria (medido em 09/09: a 11 ainda traz
-    // 43 ineditos, a 15 ja repete). O teto de 10 cortava conteudo real.
-    const total = Math.min(Math.max(Number(pages) || 1, 1), 15);
+    // A profundidade da revalidacao acompanha a da COLETA, categoria por categoria.
+    // Ler 2 paginas para revalidar uma oferta que veio da pagina 12 nao prova que
+    // ela saiu da vitrine: prova que ninguem olhou onde ela estava. Era isso que
+    // matava a fila como "Oferta saiu da vitrine" — 741 de 864 itens vindos da
+    // vitrine (86%), medido em 11/09/2026, com coleta em 40 paginas e revalidacao
+    // em 2.
+    //
+    // O custo e proporcional: so vai fundo na categoria que tem oferta funda no
+    // lote, e a vitrine vai ate ~12 por categoria, entao na pratica sao 12, nao 40.
+    const total = Math.min(Math.max(Number(pages) || 1, 1), 40);
     const found = new Map();
-    for (const category of categories) {
+    for (const category of new Set(offers.map((offer) => offer.sourceContext?.category ?? ""))) {
       for (let page = 1; page <= total; page += 1) {
         for (const item of parseDealsPage(await this.fetchPage(page, category))) found.set(item.externalId, item);
       }

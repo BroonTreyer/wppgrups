@@ -1,0 +1,18 @@
+[Unit]
+Description=OfertaFlow — painel, ingestao e publicacao
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ofertaflow
+WorkingDirectory=/opt/ofertaflow
+ExecStart=/usr/bin/node --env-file-if-exists=.env src/index.js
+Restart=on-failure
+RestartSec=10
+
+# Uma instancia so: duas gravando o mesmo store.json se sobrescrevem.
+# O proprio app ja recusa subir se a porta estiver ocupada.
+
+[Install]
+WantedBy=multi-user.target

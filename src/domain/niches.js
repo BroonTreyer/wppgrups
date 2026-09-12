@@ -34,7 +34,18 @@ export const CATEGORY_NICHE = {
   "eletrodomesticos": "home",
   "informatica": "computing-gaming",
   "brinquedos e hobbies": "kids",
-  "esportes e fitness": "sports"
+  "esportes e fitness": "sports",
+  // Vitrines abertas em 11/09/2026, quando a operacao foi para 600 por destino.
+  // Sem mapa aqui a oferta chega sem o sinal mais confiavel de nicho e depende
+  // so do nucleo do titulo — que erra bem mais.
+  "construcao": "tools-auto",
+  "industria e comercio": "tools-auto",
+  "bebes": "kids",
+  "animais": "market",
+  "saude": "health",
+  "joias e relogios": "fashion",
+  "cameras e acessorios": "electronics",
+  "instrumentos musicais": "general"
 };
 
 const normalize = (text) => String(text ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();

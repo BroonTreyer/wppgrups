@@ -113,14 +113,15 @@ const naHora = (state, isoUtc, overrides = {}) => new PublicationService({
   clock: () => new Date(isoUtc)
 });
 
-test("madrugada nao publica, mesmo com tudo o mais liberado", async () => {
+test("em full time a madrugada publica como qualquer hora", async () => {
   const estado = { destinations: [destination("g", ["electronics"])], publications: [], deliveryEvents: [], offers: [], queue: [] };
-  // 06:00 UTC = 03:00 em Brasilia.
+  // 06:00 UTC = 03:00 em Brasilia. Ate 10/09/2026 isto era bloqueado por
+  // "horario de baixa"; o dono do canal optou por operacao 24h em 11/09.
   const service = naHora(estado, "2026-09-02T06:00:00Z");
   const motivo = service.blockReason({
     destination: estado.destinations[0], offer: OFFER, nicheIds: ["electronics"], publications: [], now: new Date("2026-09-02T06:00:00Z")
   });
-  assert.match(motivo, /horario de baixa/);
+  assert.equal(motivo, null);
 });
 
 test("dentro da rajada vale o intervalo do destino; fora, nada sai", () => {
@@ -136,9 +137,9 @@ test("dentro da rajada vale o intervalo do destino; fora, nada sai", () => {
   assert.equal(motivo("2026-09-02T22:13:00Z", "2026-09-02T22:00:00Z"), null);
   // 22:05 UTC: ainda dentro dos 12 min.
   assert.match(String(motivo("2026-09-02T22:05:00Z", "2026-09-02T22:00:00Z")), /aguardando o intervalo de 12 min/);
-  // 21:13 UTC = 18:13 BRT: silencio entre a ultima rajada da tarde e a
-  // primeira da noite. As horas sem janela sao 0-5, 7, 10, 12, 15, 18 e 21.
-  assert.match(String(motivo("2026-09-02T21:13:00Z", "2026-09-02T21:00:00Z")), /horario de baixa|fora de rajada/);
+  // Em full time nao ha mais hora morta: 23:13 BRT so respeita o intervalo.
+  assert.equal(motivo("2026-09-03T02:13:00Z", "2026-09-03T02:00:00Z"), null);
+  assert.match(String(motivo("2026-09-03T02:05:00Z", "2026-09-03T02:00:00Z")), /aguardando o intervalo/);
 });
 
 test("com a curva desligada o intervalo volta a ser fixo", () => {
@@ -262,4 +263,185 @@ test("nada da linha de terceira idade e enfermagem", () => {
   // Saude legitima para o publico do canal continua entrando.
   assert.equal(motivo("Vitamina C 1000mg Com Zinco 120 Capsulas"), null);
   assert.equal(motivo("Colageno Verisol Com Acido Hialuronico 180 Capsulas"), null);
+});
+
+test("o mesmo titulo de outro vendedor nao sai duas vezes no mesmo canal", () => {
+  const destino = destination("g", ["beauty"], { minMinutesBetweenPosts: 0 });
+  const estado = { destinations: [destino], publications: [], deliveryEvents: [], offers: [], queue: [] };
+  const titulo = "Secador Taiff Tourmaline Íon 2100W – Alta Performance Preto";
+  // Publicado ontem sob o anuncio de um vendedor.
+  const publicacoes = [{
+    destinationId: "g", status: "sent", createdAt: "2026-09-09T16:00:00Z",
+    productKey: "Mercado Livre:MLB5720580194", title: titulo, nicheIds: ["beauty"]
+  }];
+  const agora = "2026-09-10T16:00:00Z";
+  // Hoje a vitrine traz o MESMO produto sob outro codigo, de outro vendedor.
+  const motivo = naHora(estado, agora).blockReason({
+    destination: destino,
+    offer: { ...OFFER, title: titulo, externalId: "MLB5720592886", marketplace: "Mercado Livre" },
+    nicheIds: ["beauty"], publications: publicacoes, now: new Date(agora)
+  });
+  assert.match(String(motivo), /titulo identico ja publicado/);
+});
+
+test("titulo diferente do mesmo tipo de produto continua passando", () => {
+  const destino = destination("g", ["beauty"], { minMinutesBetweenPosts: 0 });
+  const estado = { destinations: [destino], publications: [], deliveryEvents: [], offers: [], queue: [] };
+  const publicacoes = [{
+    destinationId: "g", status: "sent", createdAt: "2026-09-09T16:00:00Z",
+    productKey: "Mercado Livre:MLB1", title: "Secador Taiff Style 2000w Preto", nicheIds: ["beauty"]
+  }];
+  const agora = "2026-09-10T16:00:00Z";
+  const motivo = naHora(estado, agora).blockReason({
+    destination: destino,
+    offer: { ...OFFER, title: "Secador Taiff Vulcan 2500w Cinza", externalId: "MLB2", marketplace: "Mercado Livre" },
+    nicheIds: ["beauty"], publications: publicacoes, now: new Date(agora)
+  });
+  assert.equal(motivo, null);
+});
+
+// --- rajada (burstSize) -----------------------------------------------------
+// O intervalo sempre significou "um post e espere". Com `burstSize` ele passa a
+// significar "N posts e espere", que e o que o grupo #5 pediu em 11/09/2026:
+// 15 de uma vez a cada 10 min, em vez de um a cada 2.
+
+const postEm = (createdAt, n) => ({
+  destinationId: "g", status: "sent", createdAt,
+  productKey: `Mercado Livre:MLB${n}`, title: `Serum Facial Modelo ${n}`, nicheIds: ["beauty"]
+});
+
+test("dentro da rajada o destino publica de novo sem esperar o intervalo", () => {
+  const destino = destination("g", ["beauty"], { minMinutesBetweenPosts: 10, burstSize: 15, maxDailyPosts: 600 });
+  const estado = { destinations: [destino], publications: [], deliveryEvents: [], offers: [], queue: [] };
+  const agora = "2026-09-11T16:00:00Z";
+  // Catorze ja sairam nos ultimos segundos; o decimo quinto e da mesma rajada.
+  const publicacoes = Array.from({ length: 14 }, (_, i) => postEm("2026-09-11T15:59:30Z", i));
+  const motivo = naHora(estado, agora).blockReason({
+    destination: destino, offer: { ...OFFER, title: "Serum Facial Novo", externalId: "MLBX", marketplace: "Mercado Livre" },
+    nicheIds: ["beauty"], publications: publicacoes, now: new Date(agora)
+  });
+  assert.equal(motivo, null);
+});
+
+test("fechada a rajada, o destino espera o intervalo inteiro", () => {
+  const destino = destination("g", ["beauty"], { minMinutesBetweenPosts: 10, burstSize: 15, maxDailyPosts: 600 });
+  const estado = { destinations: [destino], publications: [], deliveryEvents: [], offers: [], queue: [] };
+  const agora = "2026-09-11T16:00:00Z";
+  const publicacoes = Array.from({ length: 15 }, (_, i) => postEm("2026-09-11T15:59:30Z", i));
+  const motivo = naHora(estado, agora).blockReason({
+    destination: destino, offer: { ...OFFER, title: "Serum Facial Novo", externalId: "MLBX", marketplace: "Mercado Livre" },
+    nicheIds: ["beauty"], publications: publicacoes, now: new Date(agora)
+  });
+  assert.match(String(motivo), /15\/15 da rajada/);
+});
+
+test("a janela da rajada conta do primeiro post, nao do ultimo", () => {
+  // Sem esta ancora a rajada nunca fecharia: cada post novo empurraria a
+  // liberacao para a frente e o grupo publicaria sem parar.
+  const destino = destination("g", ["beauty"], { minMinutesBetweenPosts: 10, burstSize: 3 });
+  const estado = { destinations: [destino], publications: [], deliveryEvents: [], offers: [], queue: [] };
+  const agora = "2026-09-11T16:00:00Z";
+  const publicacoes = [
+    postEm("2026-09-11T15:49:00Z", 1), // 11 min atras: ja saiu da janela
+    postEm("2026-09-11T15:52:00Z", 2),
+    postEm("2026-09-11T15:53:00Z", 3)
+  ];
+  const motivo = naHora(estado, agora).blockReason({
+    destination: destino, offer: { ...OFFER, title: "Serum Facial Novo", externalId: "MLBX", marketplace: "Mercado Livre" },
+    nicheIds: ["beauty"], publications: publicacoes, now: new Date(agora)
+  });
+  assert.equal(motivo, null, "so dois posts continuam na janela de 10 min");
+});
+
+test("destino sem burstSize mantem o gotejamento de um post por intervalo", () => {
+  const destino = destination("g", ["beauty"], { minMinutesBetweenPosts: 10 });
+  const estado = { destinations: [destino], publications: [], deliveryEvents: [], offers: [], queue: [] };
+  const agora = "2026-09-11T16:00:00Z";
+  const motivo = naHora(estado, agora).blockReason({
+    destination: destino, offer: { ...OFFER, title: "Serum Facial Novo", externalId: "MLBX", marketplace: "Mercado Livre" },
+    nicheIds: ["beauty"], publications: [postEm("2026-09-11T15:59:00Z", 1)], now: new Date(agora)
+  });
+  assert.match(String(motivo), /aguardando o intervalo de 10 min: liberado as/);
+});
+
+// --- intercalar marcas ------------------------------------------------------
+
+const postDaMarca = (createdAt, marca, n) => ({
+  destinationId: "g", status: "sent", createdAt, sellerName: marca,
+  productKey: `Mercado Livre:MLB${n}`, title: `Batom Liquido Modelo ${n}`, nicheIds: ["beauty"]
+});
+
+test("a mesma marca nao sai duas vezes seguidas no destino", async () => {
+  // A colheita traz a loja inteira de uma vez: sem regra dura, a rajada de 15 sai
+  // com 13 VULT em sequencia.
+  const destino = destination("g", ["beauty"], { minMinutesBetweenPosts: 10, burstSize: 15, maxDailyPosts: 600 });
+  const estado = { destinations: [destino], publications: [], deliveryEvents: [], offers: [], queue: [] };
+  const agora = "2026-09-11T16:00:00Z";
+  const motivo = naHora(estado, agora).blockReason({
+    destination: destino,
+    offer: { ...OFFER, title: "Batom Liquido Matte Novo", externalId: "MLBX", marketplace: "Mercado Livre", sellerName: "VULT" },
+    nicheIds: ["beauty"], publications: [postDaMarca("2026-09-11T15:59:30Z", "VULT", 1)], now: new Date(agora)
+  });
+  assert.match(String(motivo), /intercalando com outra/);
+});
+
+test("outra marca passa na hora, sem esperar o intervalo", async () => {
+  const destino = destination("g", ["beauty"], { minMinutesBetweenPosts: 10, burstSize: 15, maxDailyPosts: 600 });
+  const estado = { destinations: [destino], publications: [], deliveryEvents: [], offers: [], queue: [] };
+  const agora = "2026-09-11T16:00:00Z";
+  const motivo = naHora(estado, agora).blockReason({
+    destination: destino,
+    offer: { ...OFFER, title: "Serum Facial Avon Renew", externalId: "MLBX", marketplace: "Mercado Livre", sellerName: "AVON" },
+    nicheIds: ["beauty"], publications: [postDaMarca("2026-09-11T15:59:30Z", "VULT", 1)], now: new Date(agora)
+  });
+  assert.equal(motivo, null);
+});
+
+test("a loja operada pela marca conta como a propria marca", async () => {
+  // "NIINA SECRETS por Eudora" seguida de "EUDORA" e Eudora duas vezes na tela.
+  const destino = destination("g", ["beauty"], { minMinutesBetweenPosts: 10, burstSize: 15, maxDailyPosts: 600 });
+  const estado = { destinations: [destino], publications: [], deliveryEvents: [], offers: [], queue: [] };
+  const agora = "2026-09-11T16:00:00Z";
+  const motivo = naHora(estado, agora).blockReason({
+    destination: destino,
+    offer: { ...OFFER, title: "Perfume Eudora Siage", externalId: "MLBX", marketplace: "Mercado Livre", sellerName: "EUDORA" },
+    nicheIds: ["beauty"], publications: [postDaMarca("2026-09-11T15:59:30Z", "NIINA SECRETS por Eudora", 1)], now: new Date(agora)
+  });
+  assert.match(String(motivo), /intercalando com outra/);
+});
+
+test("brandCooldownPosts 3 exige tres outras marcas antes de repetir", async () => {
+  const destino = destination("g", ["beauty"], { minMinutesBetweenPosts: 10, burstSize: 15, maxDailyPosts: 600, brandCooldownPosts: 3 });
+  const estado = { destinations: [destino], publications: [], deliveryEvents: [], offers: [], queue: [] };
+  const agora = "2026-09-11T16:00:00Z";
+  const vult = { ...OFFER, title: "Batom Vult Novo", externalId: "MLBX", marketplace: "Mercado Livre", sellerName: "VULT" };
+  const comDuasNoMeio = [
+    postDaMarca("2026-09-11T15:57:00Z", "VULT", 1),
+    postDaMarca("2026-09-11T15:58:00Z", "AVON", 2),
+    postDaMarca("2026-09-11T15:59:00Z", "WELLA", 3)
+  ];
+  assert.match(String(naHora(estado, agora).blockReason({
+    destination: destino, offer: vult, nicheIds: ["beauty"], publications: comDuasNoMeio, now: new Date(agora)
+  })), /intercalando com outra/, "VULT ainda esta dentro dos 3 ultimos");
+
+  const comTresNoMeio = [...comDuasNoMeio, postDaMarca("2026-09-11T15:59:30Z", "NATURA", 4)];
+  assert.equal(naHora(estado, agora).blockReason({
+    destination: destino, offer: vult, nicheIds: ["beauty"], publications: comTresNoMeio, now: new Date(agora)
+  }), null, "com tres outras marcas depois dela, VULT volta");
+});
+
+test("fechada a rajada, a marca volta a poder sair", async () => {
+  // Um destino cuja fila so tem uma marca nao pode ficar mudo para sempre: o
+  // certo e espacar a marca, nao calar o grupo.
+  const destino = destination("g", ["beauty"], { minMinutesBetweenPosts: 10, burstSize: 15, maxDailyPosts: 600 });
+  const estado = { destinations: [destino], publications: [], deliveryEvents: [], offers: [], queue: [] };
+  const agora = "2026-09-11T16:00:00Z";
+  const motivo = naHora(estado, agora).blockReason({
+    destination: destino,
+    offer: { ...OFFER, title: "Batom Liquido Matte Novo", externalId: "MLBX", marketplace: "Mercado Livre", sellerName: "VULT" },
+    nicheIds: ["beauty"],
+    publications: [postDaMarca("2026-09-11T15:45:00Z", "VULT", 1)], // 15 min atras: fora da janela
+    now: new Date(agora)
+  });
+  assert.equal(motivo, null);
 });

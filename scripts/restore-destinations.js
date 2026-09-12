@@ -39,6 +39,8 @@ for (const destino of alvos) {
   console.log(`${destino.active ? "[ligado] " : "[parado] "}${destino.name} (${destino.type})`);
   console.log(`   nichos: ${(destino.nicheIds ?? []).join(", ") || "nenhum"}`);
   console.log(`   filtro de publico: ${(destino.blockedKeywords ?? []).length} palavras -> ${ACHADINHOS_PRESET.blockedKeywords.length} (${faltando >= 0 ? "+" : ""}${faltando})`);
+  const mudos = ACHADINHOS_PRESET.mutedKeywords.length - (destino.mutedKeywords ?? []).length;
+  console.log(`   saturacao: ${(destino.mutedKeywords ?? []).length} palavras -> ${ACHADINHOS_PRESET.mutedKeywords.length} (${mudos >= 0 ? "+" : ""}${mudos})`);
   console.log(`   teto de preco: ${destino.maxPrice ?? "nenhum"} -> R$ ${ACHADINHOS_PRESET.maxPrice}`);
 }
 
@@ -53,6 +55,11 @@ await store.update((state) => {
     if (!destino) continue;
     Object.assign(destino, {
       blockedKeywords: [...ACHADINHOS_PRESET.blockedKeywords],
+      // `mutedKeywords` ficou de fora deste Object.assign ate 10/09/2026: o preset
+      // definia a lista de saturacao, o script dizia ter aplicado o preset, e a
+      // lista nunca chegava ao destino. Silencioso do pior jeito — quem lia o
+      // codigo via a regra existir e quem lia o canal via o produto saindo.
+      mutedKeywords: [...ACHADINHOS_PRESET.mutedKeywords],
       requireAnyByNiche: structuredClone(ACHADINHOS_PRESET.requireAnyByNiche),
       maxPrice: ACHADINHOS_PRESET.maxPrice,
       requireAudienceFit: ACHADINHOS_PRESET.requireAudienceFit

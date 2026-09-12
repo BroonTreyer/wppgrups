@@ -23,9 +23,16 @@ export class QueueService {
       // Nao entra o que nunca vai sair. Fila e estoque do que sera publicado;
       // guardar o resto faz a ingestao ver estoque que nao existe e parar de
       // coletar, e o canal seca com a fila cheia.
-      const semDestino = !this.eligibleDestination(state, offer, nicheIds);
+      // Duas perguntas distintas, e o motivo precisa dizer qual falhou.
+      const semDestino = !this.eligibleDestination(state, offer, nicheIds, { ignorarRepublicacao: true });
       if (semDestino && state.destinations.some((d) => d.active)) {
         return { skipped: true, reason: "Nenhum destino ativo aceita esta oferta", productKey: key };
+      }
+      // Ja publicado em todo destino que o aceitaria, dentro do cooldown. Sem
+      // esta porta, encurtar INGESTION_MEMORY_HOURS encheria a fila de produto
+      // que nao tem como sair.
+      if (state.destinations.some((d) => d.active) && !this.eligibleDestination(state, offer, nicheIds)) {
+        return { skipped: true, reason: "Produto ja publicado recentemente em todos os destinos que o aceitam", productKey: key };
       }
       const existing = state.queue.find((item) => item.productKey === key && ["queued", "processing", "awaiting-link"].includes(item.status));
       if (existing) {
@@ -92,9 +99,11 @@ export class QueueService {
         .filter((entry) => !(entry.deliveredTo ?? []).includes(destination.id))
         .map((entry) => ({
           entry,
+          // `recentes` ja e a lista deste destino, filtrada e ordenada logo acima.
+          // Passa-la evita que cada chamada varra as publicacoes inteiras de novo.
           reason: this.publicationService.blockReason({
             destination, offer: entry.offer, nicheIds: entry.nicheIds,
-            publications: publicacoes, now
+            publications: publicacoes, destinationPosts: recentes, now
           })
         }))
         .filter((item) => item.reason === null)
@@ -171,11 +180,34 @@ export class QueueService {
    * Nada de teto diario nem de intervalo aqui: a pergunta e se ALGUM destino
    * ativo aceita o produto, nao se aceita agora.
    */
-  eligibleDestination(state, offer, nicheIds) {
+  /**
+   * Algum destino ainda pode receber esta oferta?
+   *
+   * `permanentBlockReason` responde pelo que nunca muda (nicho, publico). A
+   * republicacao e diferente: ela passa com o tempo, mas em DIAS — o cooldown e
+   * de `republishCooldownDays`. Para a fila, esperar dias e o mesmo que nunca:
+   * o item ocuparia vaga, a ingestao veria estoque que nao existe e pararia de
+   * coletar, e o canal secaria com a fila cheia (foi o que aconteceu em 08/09).
+   *
+   * Por isso a checagem de "ja publiquei isto aqui" entra so na ENTRADA da fila,
+   * nunca na publicacao — la ela continua sendo um bloqueio que passa.
+   */
+  eligibleDestination(state, offer, nicheIds, { ignorarRepublicacao = false } = {}) {
+    const key = productKey(offer);
+    // Sem cooldown configurado a porta fica ABERTA de proposito, nunca aberta por
+    // engano: `undefined * 86400000` daria NaN e desligaria a regra em silencio.
+    const dias = Number(this.config.limits?.republishCooldownDays) || 0;
+    const limite = this.clock().getTime() - dias * 86_400_000;
+    const jaSaiuAqui = (destination) => (state.publications ?? []).some((item) =>
+      (item.destinationId ?? item.groupId) === destination.id
+      && item.status === "sent"
+      && (item.productKey ?? null) === key
+      && new Date(item.createdAt).getTime() >= limite);
     return state.destinations.find((destination) =>
       destination.active
       && destination.available !== false
       && !this.publicationService.permanentBlockReason({ destination, offer, nicheIds })
+      && (ignorarRepublicacao || !jaSaiuAqui(destination))
     ) ?? null;
   }
 
@@ -257,16 +289,25 @@ export class QueueService {
       const item = target.entry;
       const destination = target.destination;
       selectedItem = item;
-      await this.store.update((current) => {
+      // O item pode ter sumido entre a selecao e esta escrita: a retencao poda,
+      // e `expireOldItems` muda status no meio do caminho. Sem a guarda isto
+      // lanca dentro do mutator do store.
+      const aindaNaFila = await this.store.update((current) => {
         const selected = current.queue.find((entry) => entry.id === item.id);
+        if (!selected) return false;
         selected.status = "processing";
         selected.attempts += 1;
+        return true;
       });
+      if (!aindaNaFila) return { processed: false, reason: "item saiu da fila antes de publicar" };
       const result = await this.publicationService.publish({
         ...item.offer, nicheIds: item.nicheIds, destinationId: destination.id
       });
       await this.store.update((current) => {
         const selected = current.queue.find((entry) => entry.id === item.id);
+        // Ja publicou; se o item sumiu da fila nesse meio tempo, o registro da
+        // publicacao acima e o que importa — nao ha o que atualizar aqui.
+        if (!selected) return;
         if (!result.matchedDestinations) {
           selected.status = "queued";
           selected.attempts = Math.max(0, selected.attempts - 1);

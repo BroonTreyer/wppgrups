@@ -3,22 +3,46 @@
   "name": "OfertaFlow - Gerador de links de afiliado",
   "version": "1.0.0",
   "description": "Gera os links de afiliado do Mercado Livre no seu navegador logado e entrega para o OfertaFlow.",
-  "permissions": ["storage", "tabs", "scripting", "alarms"],
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting",
+    "alarms"
+  ],
   "host_permissions": [
     "https://www.mercadolivre.com.br/*",
+    "https://lista.mercadolivre.com.br/*",
     "http://localhost/*",
     "http://127.0.0.1/*"
   ],
-  "background": { "service_worker": "background.js" },
-  "action": { "default_popup": "popup.html", "default_title": "OfertaFlow" },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "OfertaFlow"
+  },
   "content_scripts": [
     {
-      "matches": ["https://www.mercadolivre.com.br/*"],
-      "js": ["content.js"],
+      "matches": [
+        "https://www.mercadolivre.com.br/*",
+        "https://lista.mercadolivre.com.br/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
-    { "resources": ["injected.js"], "matches": ["https://www.mercadolivre.com.br/*"] }
+    {
+      "resources": [
+        "injected.js"
+      ],
+      "matches": [
+        "https://www.mercadolivre.com.br/*",
+        "https://lista.mercadolivre.com.br/*"
+      ]
+    }
   ]
 }

@@ -74,9 +74,15 @@ export const ACHADINHOS_REQUIRE_BY_NICHE = {
   ]
 };
 
-// A mediana publicada foi R$ 108 e o maior R$ 247: o teto barra o eletrodomestico
-// caro por REGRA, nao por efeito da pontuacao.
-export const ACHADINHOS_MAX_PRICE = 400;
+// Teto por REGRA, nao por efeito da pontuacao. Era 400, quando a mediana publicada
+// era R$ 108 e o maior R$ 247. Subiu para 700 a pedido do dono do canal em
+// 10/09/2026, junto com a abertura de volume.
+//
+// Fica o registro de que o teto alto puxa o canal para longe do que ele e: no dia
+// em que valeu 700, a mediana publicada foi R$ 65 e sairam quatro produtos acima de
+// R$ 400 — um secador de R$ 599 entre batons de R$ 20. Teto e rede de seguranca; o
+// que decide de verdade e a pontuacao, e ela ja prefere o barato.
+export const ACHADINHOS_MAX_PRICE = 700;
 
 // Liga o julgamento de publico da IA neste destino. Sem isto o campo e ignorado,
 // e o canal masculino nao herda um veredito escrito para o canal feminino.
@@ -102,7 +108,22 @@ const PERFUME_ARABE = [
 // lista. "tenis" pega com e sem acento (matchesTitle tira o acento antes).
 const CALCADO_ESPORTIVO = ["tenis"];
 
-export const ACHADINHOS_MUTED_KEYWORDS = [...PERFUME_ARABE, ...CALCADO_ESPORTIVO];
+// Aparelho de cabelo, pelo mesmo motivo — e o caso mais grave que ja apareceu.
+// Em 09/09/2026, 29 dos 196 posts do grupo #5 eram secador, prancha, modelador ou
+// escova eletrica: 15% do canal, quase o dobro do que o tenis pesava quando entrou
+// nesta lista. E dinheiro parado em produto que se compra UMA vez a cada tres anos;
+// quem ja tem secador nao compra outro por causa do desconto, entao o post nao
+// converte e ainda ocupa a vez de uma oferta que converteria.
+//
+// "alisadora" e "pente alisador" ficam aqui por saturacao. Nao confundir com a
+// quimica de alisamento (btx, progressiva, reconstrucao), que e outra conversa:
+// aquela e servico de salao e a IA barra por PUBLICO, nao por volume.
+const APARELHO_DE_CABELO = [
+  "secador", "prancha", "chapinha", "modelador", "alisadora", "pente alisador",
+  "escova secadora", "escova rotativa", "escova modeladora", "escova eletrica"
+];
+
+export const ACHADINHOS_MUTED_KEYWORDS = [...PERFUME_ARABE, ...CALCADO_ESPORTIVO, ...APARELHO_DE_CABELO];
 
 export const ACHADINHOS_PRESET = {
   requireAudienceFit: ACHADINHOS_REQUIRE_AUDIENCE_FIT,

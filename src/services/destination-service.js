@@ -2,7 +2,8 @@ import { DEFAULT_NICHES } from "../domain/niches.js";
 
 const defaultsFor = (type, config) => ({
   maxDailyPosts: type === "channel" ? config.limits.maxPostsPerChannelPerDay : config.limits.maxPostsPerGroupPerDay,
-  minMinutesBetweenPosts: type === "channel" ? config.limits.channelMinutesBetweenPosts : config.limits.groupMinutesBetweenPosts
+  minMinutesBetweenPosts: type === "channel" ? config.limits.channelMinutesBetweenPosts : config.limits.groupMinutesBetweenPosts,
+  burstSize: config.limits.postsPerBurst
 });
 
 export class DestinationService {
@@ -59,7 +60,12 @@ export class DestinationService {
         if (patch.active && destination.available === false) throw new Error("Sincronize novamente antes de ativar um destino indisponivel");
         destination.active = patch.active;
       }
-      for (const [field, min, max] of [["minDiscount", 0, 100], ["maxDailyPosts", 1, 500], ["maxPrice", 0, 1000000], ["minSold", 0, 1000000]]) {
+      // O teto de `maxDailyPosts` era 500, de quando um canal fazia 60 por dia.
+      // Subiu para 1000 em 11/09/2026, com a operacao indo para 600 por destino.
+      // `burstSize` vai ate 50 e nao mais: sao mensagens seguidas na tela de quem
+      // esta no grupo, e o custo de exagerar aqui aparece na saida de membro, nao
+      // em nenhuma metrica do sistema.
+      for (const [field, min, max] of [["minDiscount", 0, 100], ["maxDailyPosts", 1, 1000], ["maxPrice", 0, 1000000], ["minSold", 0, 1000000], ["burstSize", 1, 50], ["brandCooldownPosts", 0, 20]]) {
         if (patch[field] === undefined) continue;
         const value = Number(patch[field]);
         if (!Number.isInteger(value) || value < min || value > max) throw new Error(`${field} deve ser um inteiro entre ${min} e ${max}`);
@@ -71,6 +77,13 @@ export class DestinationService {
         const value = Number(patch.minMinutesBetweenPosts);
         if (!Number.isFinite(value) || value < 0 || value > 1440) throw new Error("minMinutesBetweenPosts deve ser um numero entre 0 e 1440");
         destination.minMinutesBetweenPosts = value;
+      }
+      // Exigir loja oficial da marca. Serve a canal que se vende como curadoria
+      // de marca ("so original"), ao preco de cortar ~70% da vitrine — por isso
+      // e escolha por destino, nunca regra do sistema.
+      if (patch.requireOfficialStore !== undefined) {
+        if (typeof patch.requireOfficialStore !== "boolean") throw new Error("requireOfficialStore deve ser booleano");
+        destination.requireOfficialStore = patch.requireOfficialStore;
       }
       if (patch.nicheIds !== undefined) {
         if (!Array.isArray(patch.nicheIds) || !patch.nicheIds.length) throw new Error("Selecione pelo menos um nicho");

@@ -32,10 +32,10 @@ const ingestionService = new IngestionService({ store, queueService, affiliateLi
 const retentionService = new RetentionService({ store, config });
 const operationService = new OperationService({ store, config });
 await operationService.restoreWindow();
-const stopScheduler = startScheduler({ queueService, ingestionService, retentionService, operationService, config });
+const stopScheduler = startScheduler({ queueService, ingestionService, retentionService, operationService, affiliateLinkService, config });
 const server = createApp({ config, destinationService, publicationService, queueService, productLinkService, ingestionService, affiliateLinkService, operationService });
 
-server.listen(config.port, () => console.log(`OfertaFlow ativo em ${config.appBaseUrl} (dry-run: ${config.dryRun})`));
+server.listen(config.port, config.host, () => console.log(`OfertaFlow ativo em ${config.appBaseUrl} (${config.host}:${config.port}, dry-run: ${config.dryRun})`));
 for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => {
   stopScheduler();
   server.close(() => process.exit(0));

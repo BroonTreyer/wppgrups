@@ -43,6 +43,11 @@ export function formatOfferCaption(offer, now = new Date(), nicheIds = offer.nic
   }
 
   const provas = [];
+  // Loja oficial da marca vem PRIMEIRO na linha de prova social. Para quem le,
+  // "NATURA · Loja oficial" responde a duvida que trava a compra em marketplace
+  // — se o produto e original. O selo ja vinha no card da vitrine; a legenda so
+  // nao o mostrava.
+  if (offer.officialStore && offer.sellerName) provas.push(`🏅 ${offer.sellerName} · Loja oficial`);
   if (offer.rating) provas.push(`⭐ ${offer.rating.toFixed(1)}`);
   const social = offer.reviewCount ? `${offer.reviewCount} avaliações` : offer.soldLabel;
   if (social) provas.push(social);

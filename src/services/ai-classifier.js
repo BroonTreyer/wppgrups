@@ -2,7 +2,12 @@ import Anthropic from "@anthropic-ai/sdk";
 import { DEFAULT_NICHES, inferNiches } from "../domain/niches.js";
 import { productKey } from "../domain/offer.js";
 
-const MAX_MEMORY = 20000;
+// Quantas decisoes o cache guarda. Era 20.000, dimensionado para uma coleta que
+// via algumas centenas de produtos por dia. Com a operacao full time a mesma
+// vitrine e varrida dezenas de vezes ao dia, e um cache que roda em menos de 24h
+// faz o sistema PAGAR DE NOVO pelo mesmo titulo — o custo da IA e o maior do
+// projeto, e quem o controla e a taxa de acerto daqui.
+const MAX_MEMORY_PADRAO = 120_000;
 
 // O catalogo entra no prompt a partir da MESMA fonte que a regra usa. Se um nicho
 // nascer ou mudar de nome, o modelo enxerga a mudanca sem ninguem lembrar de
@@ -52,7 +57,24 @@ Responda false quando o produto nao serve a esse canal, mesmo sendo uma boa ofer
   geriatrica, colchao antiescara, aparelho auditivo, material hospitalar.
 - Material medico, equipamento comercial ou industrial.
 - Produto para animais.
-- Peruca, cabeca de manequim e material de salao profissional.
+- Peruca, cabeca de manequim e material de salao profissional. O que decide e o TIPO
+  de produto, nao a litragem: quimica de PROCESSO — "btx", "botox capilar",
+  "progressiva", "reconstrucao", "alinhamento", "redutor de volume", "selagem" — e
+  servico de cabeleireiro e responde false, ainda que venha em 300ml. Ja cosmetico de
+  uso diario (shampoo, condicionador, mascara, leave-in, oleo) e true em QUALQUER
+  tamanho, 1L inclusive: litro de shampoo de marca conhecida e compra normal de quem
+  lava o proprio cabelo. "Professional" no nome de linha comercial nao basta para
+  barrar — pergunte se a leitora usa sozinha no banheiro ou se precisa de um
+  profissional aplicando.
+- Insumo e materia-prima de fabricacao: "base glicerinada para sabonete", "base de
+  glicerina 1kg", essencia a granel, embalagem vazia para revenda. Quem compra isso
+  esta produzindo para vender, nao se cuidando — false.
+- Produto para TRATAR uma condicao: micose, psoriase, queda de cabelo, calvicie,
+  alopecia, minoxidil, verruga, frieira, calo, unha encravada, tintura para cobrir
+  fios brancos. Sao compras legitimas e ate comuns, mas ninguem quer ver pomada de
+  micose no meio do canal de achadinhos, e anunciar isso a quem nao pediu constrange.
+  Cosmetico que so hidrata, limpa ou embeleza continua true; o que promete curar ou
+  corrigir um problema e false.
 - LINHA masculina de marca feminina. A marca nao decide, a linha decide: "Eudora
   Club", "Malbec" e "Egeo Man" sao masculinos ainda que Eudora e Boticario
   vendam muito para mulher. Leia a linha, nao o fabricante.
@@ -70,6 +92,12 @@ pelo que esta escrito no titulo, nao por impressao geral do produto.
 Responda true para o que uma mulher compraria para si, para a casa ou para os filhos.
 Cosmetico, skincare, panela, roupa de cama, organizador, brinquedo, suplemento comum
 (colageno, vitamina) e eletrodomestico de cozinha sao true.
+
+O teste final, antes de responder true: isto daria vontade de comprar aparecendo entre
+um batom e um vestido? Oferta boa que quebra o clima do canal e false. Nao confunda
+"uma mulher poderia comprar" com "serve a este canal" — quase tudo passa no primeiro
+teste, e foi assim que pomada de micose, base de sabonete a granel e espuma de limpar
+sofa entraram no canal de beleza e moda em 09/09/2026.
 
 O campo motivo tem no maximo 8 palavras e explica a decisao de publico, nao o nicho.`;
 
@@ -159,13 +187,38 @@ export class AiClassifier {
     if (!pendentes.length) return resultado;
 
     const novas = [];
+    const lotes = [];
     for (let inicio = 0; inicio < pendentes.length; inicio += this.config.batchSize) {
-      const lote = pendentes.slice(inicio, inicio + this.config.batchSize);
-      let decisoes;
-      try {
-        decisoes = await this.perguntar(lote);
-      } catch (error) {
-        await this.avisar(`Classificacao por IA falhou (${error.message}). Este lote foi pela regra.`);
+      lotes.push(pendentes.slice(inicio, inicio + this.config.batchSize));
+    }
+
+    // Os lotes eram resolvidos em fila indiana. Com `effort: high` cada chamada
+    // leva dezenas de segundos, entao varrer nove vitrines custava mais de dez
+    // minutos — e nesse tempo a coleta nao entrega NADA para a fila. Como um
+    // lote nao depende do anterior, o unico motivo para serializar era nao
+    // atropelar o limite de requisicoes da API; e para isso basta um teto de
+    // chamadas simultaneas.
+    const emVoo = new Set();
+    const resolvidos = new Array(lotes.length);
+    for (const [indice, lote] of lotes.entries()) {
+      const tarefa = this.perguntar(lote)
+        .then((decisoes) => { resolvidos[indice] = decisoes; })
+        .catch(async (error) => {
+          await this.avisar(`Classificacao por IA falhou (${error.message}). Este lote foi pela regra.`);
+          resolvidos[indice] = null;
+        })
+        .finally(() => emVoo.delete(tarefa));
+      emVoo.add(tarefa);
+      // Sem teto configurado o certo e serializar, nao disparar tudo de uma vez:
+      // um `undefined` aqui viraria paralelismo ilimitado contra a API.
+      const teto = Math.max(1, Number(this.config.concurrency) || 1);
+      if (emVoo.size >= teto) await Promise.race(emVoo);
+    }
+    await Promise.all(emVoo);
+
+    for (const [indice, lote] of lotes.entries()) {
+      const decisoes = resolvidos[indice];
+      if (!decisoes) {
         for (const offer of lote) resultado.set(productKey(offer), pelaRegra(offer));
         continue;
       }
@@ -216,10 +269,19 @@ export class AiClassifier {
   async guardar(novas) {
     const limite = this.clock().getTime() - this.config.memoryDays * 86400000;
     const chaves = new Set(novas.map((item) => item.key));
+    const teto = Math.max(1, Number(this.config.memoryEntries) || MAX_MEMORY_PADRAO);
+    // O `motivo` so e lido para EXPLICAR um bloqueio. Guarda-lo para as decisoes
+    // aprovadas era 3/4 do texto do cache sem nunca chegar a ninguem — e cache
+    // grande e exatamente o que se quer aqui.
+    const enxutas = novas.map((item) => (
+      item.decisao?.servePublico === false
+        ? item
+        : { ...item, decisao: { ...item.decisao, motivo: undefined } }
+    ));
     await this.store.update((state) => {
       const anteriores = (state.classifications ?? [])
         .filter((item) => !chaves.has(item.key) && new Date(item.at).getTime() >= limite);
-      state.classifications = [...anteriores, ...novas].slice(-MAX_MEMORY);
+      state.classifications = [...anteriores, ...enxutas].slice(-teto);
     });
   }
 

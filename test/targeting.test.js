@@ -114,3 +114,42 @@ test("sem priorityNiches nada muda", () => {
   assert.equal(priorityBonus(["beauty"], { nicheIds: ["beauty"] }), 0);
   assert.equal(priorityBonus(["beauty"], {}), 0);
 });
+
+test("marca repetida perde a vez para outra marca", () => {
+  // A colheita traz uma loja inteira de uma vez. Sem esta penalidade o canal
+  // publica um bloco de Avon, depois um bloco de Eudora — foi o que o dono do
+  // canal reclamou em 11/09/2026.
+  const recentes = [
+    { title: "Avon Care Hidratante 200ml", sellerName: "AVON", nicheIds: ["beauty"] },
+    { title: "Avon Renew Serum 30ml", sellerName: "AVON", nicheIds: ["beauty"] }
+  ];
+  const outraAvon = { title: "Avon Match Batom Matte", sellerName: "AVON", currentPrice: 30, originalPrice: 60, soldCount: 900, rating: 4.7 };
+  const naturaQualquer = { title: "Natura Tododia Creme 400ml", sellerName: "NATURA", currentPrice: 30, originalPrice: 60, soldCount: 900, rating: 4.7 };
+
+  const penalAvon = repetitionPenalty(outraAvon, ["beauty"], recentes);
+  const penalNatura = repetitionPenalty(naturaQualquer, ["beauty"], recentes);
+  assert.ok(penalAvon > penalNatura, `a terceira Avon tem que ser penalizada: ${penalAvon} vs ${penalNatura}`);
+
+  const destino = { id: "g", nicheIds: ["beauty"], minMinutesBetweenPosts: 5 };
+  const scoreAvon = scoreForDestination(outraAvon, destino, { nicheIds: ["beauty"], recent: recentes });
+  const scoreNatura = scoreForDestination(naturaQualquer, destino, { nicheIds: ["beauty"], recent: recentes });
+  assert.ok(scoreNatura > scoreAvon, "com tudo igual, a outra marca tem que ganhar a vez");
+});
+
+test("uma marca sozinha no historico ainda pode repetir", () => {
+  // Intercalar nao e proibir: duas da mesma marca em cinco posts e aceitavel.
+  const recentes = [{ title: "Natura Tododia Creme", sellerName: "NATURA", nicheIds: ["beauty"] }];
+  const outra = { title: "Natura Ekos Polpa", sellerName: "NATURA", currentPrice: 30, originalPrice: 60, soldCount: 900, rating: 4.7 };
+  const penal = repetitionPenalty(outra, ["beauty"], recentes);
+  assert.ok(penal < 60, `penalidade alta demais para a segunda da marca: ${penal}`);
+});
+
+test("sem vendedor nao ha penalidade de marca", () => {
+  // A primeira palavra do titulo NAO serve como marca: em "Creatina 1kg Growth"
+  // ela e o tipo do produto, e duas creatinas de fabricantes diferentes seriam
+  // tratadas como a mesma loja. Sem vendedor, quem cobre o caso e a penalidade
+  // de titulo parecido.
+  const recentes = [{ title: "Wella Invigo Shampoo 1L", nicheIds: ["beauty"] }];
+  const semVendedor = { title: "Truss Equilibrium Shampoo", currentPrice: 30, originalPrice: 60, soldCount: 900, rating: 4.7 };
+  assert.equal(repetitionPenalty(semVendedor, ["beauty"], recentes), 6, "so a penalidade de nicho");
+});

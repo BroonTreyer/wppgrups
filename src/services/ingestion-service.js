@@ -3,8 +3,11 @@ import { inferNiches } from "../domain/niches.js";
 import { isRisky, scoreOffer } from "../domain/scoring.js";
 import { SessionExpiredError } from "./affiliate-link-service.js";
 
-const DEFAULT_FILTERS = { enabled: false, minDiscount: 20, maxDiscount: 90, minRating: 4.3, minSold: 500, minPrice: 0, maxPrice: 400, sweetSpotMin: 25, sweetSpotMax: 200, maxPerRun: 8, maxPerNiche: 2, blockedKeywords: [], categories: [] };
-const INTEGER_FIELDS = [["minDiscount", 0, 100], ["maxDiscount", 0, 100], ["minSold", 0, 1000000], ["sweetSpotMin", 0, 100000], ["sweetSpotMax", 1, 100000], ["maxPerRun", 1, 50], ["maxPerNiche", 1, 50], ["pages", 1, 15]];
+const DEFAULT_FILTERS = { enabled: false, minDiscount: 20, maxDiscount: 90, minRating: 4.3, minSold: 500, minPrice: 0, maxPrice: 400, sweetSpotMin: 25, sweetSpotMax: 200, maxPerRun: 8, maxPerNiche: 2, categoriesPerRun: 1, blockedKeywords: [], categories: [] };
+// Os tetos de `maxPerRun` e `maxPerNiche` eram 50: suficiente para um destino,
+// apertado para uma frota. Com sete canais consumindo ofertas proprias, 50 por
+// rodada e menos do que a frota gasta entre duas coletas.
+const INTEGER_FIELDS = [["minDiscount", 0, 100], ["maxDiscount", 0, 100], ["minSold", 0, 1000000], ["sweetSpotMin", 0, 100000], ["sweetSpotMax", 1, 100000], ["maxPerRun", 1, 300], ["maxPerNiche", 1, 300], ["pages", 1, 40], ["categoriesPerRun", 1, 30]];
 const NUMBER_FIELDS = [["minRating", 0, 5], ["minPrice", 0, 1000000], ["maxPrice", 0, 1000000]];
 const CATEGORY_PATTERN = /^[A-Z0-9]{1,12}$/;
 const MAX_MEMORY = 20000;
@@ -93,7 +96,15 @@ export class IngestionService {
     const discount = discountPercentage(offer);
     if (discount < (settings.minDiscount ?? 0)) return "desconto abaixo do minimo";
     if (settings.maxDiscount && discount > settings.maxDiscount) return "desconto alto demais para ser real";
-    if (settings.minSold && (offer.soldCount ?? 0) < settings.minSold) return "pouca gente comprou esse produto";
+    // Piso de vendas POR NICHO, com o da fonte como padrao. Existe porque o piso
+    // unico de 150 descartava a colheita inteira das lojas de marca de beleza —
+    // 1.200 produtos lidos, 0 enfileirados em 11/09/2026: produto de loja oficial
+    // raramente exibe "+150 vendidos" no card. Baixar o piso da fonte resolveria
+    // beleza e entupiria a fila dos outros grupos com item que eles nunca
+    // publicariam, porque o filtro de vendas do DESTINO so age na hora de
+    // publicar — tarde demais, a vaga na fila ja foi ocupada.
+    const pisoDeVendas = settings.minSoldByNiche?.[mainNiche(offer)] ?? settings.minSold;
+    if (pisoDeVendas && (offer.soldCount ?? 0) < pisoDeVendas) return "pouca gente comprou esse produto";
     if (isRisky(offer, settings.blockedKeywords ?? [])) return "categoria sensivel";
     // Preco que so vale com cupom nao vai para o canal. Esconder a condicao e
     // anunciar um preco que a pagina desmente; anunciar a condicao e mandar o
@@ -124,6 +135,23 @@ export class IngestionService {
     const categories = settings.categories ?? [];
     if (!categories.length) return "";
     return categories[(settings.cursor ?? 0) % categories.length];
+  }
+
+  /**
+   * As categorias desta rodada, a partir do cursor.
+   *
+   * Varrer uma categoria por vez amarra o volume do dia ao rodizio: com nove
+   * categorias e uma rodada a cada 30 min, cada vitrine so era visitada cinco
+   * vezes por dia, e a fila enchia de um nicho so — que e o que o destino
+   * daquele nicho conseguia consumir. Varrendo varias de uma vez, a selecao
+   * escolhe as melhores de TODO o espectro e cada destino encontra a sua.
+   */
+  categoriesForRun(settings) {
+    const categories = settings.categories ?? [];
+    if (!categories.length) return [""];
+    const quantas = Math.min(Math.max(Number(settings.categoriesPerRun) || 1, 1), categories.length);
+    const inicio = (settings.cursor ?? 0) % categories.length;
+    return Array.from({ length: quantas }, (_, passo) => categories[(inicio + passo) % categories.length]);
   }
 
   async run({ sourceId } = {}) {
@@ -165,8 +193,8 @@ export class IngestionService {
 
   async runSource(settings) {
     const startedAt = this.clock();
-    const category = this.nextCategory(settings);
-    const stats = { sourceId: settings.id, category, collected: 0, rejected: 0, duplicated: 0, enqueued: 0, errors: [] };
+    const categorias = this.categoriesForRun(settings);
+    const stats = { sourceId: settings.id, category: categorias.join(","), categories: categorias, collected: 0, rejected: 0, duplicated: 0, enqueued: 0, errors: [] };
     try {
       const { queued, capacity, room } = await this.queueRoom();
       if (capacity > 0 && room <= 0) {
@@ -174,7 +202,24 @@ export class IngestionService {
         return this.finish(settings, startedAt, stats);
       }
       const limit = capacity > 0 ? Math.min(settings.maxPerRun ?? 8, room) : (settings.maxPerRun ?? 8);
-      const collected = await this.sources.get(settings.id).collect({ pages: settings.pages, category });
+      const source = this.sources.get(settings.id);
+      const vistos = new Set();
+      const collected = [];
+      for (const category of categorias) {
+        try {
+          for (const offer of await source.collect({ pages: settings.pages, category })) {
+            // O mesmo produto aparece em mais de uma vitrine (uma escova de
+            // cabelo esta em Beleza e em Eletrodomesticos). Deduplicar aqui
+            // evita pagar a IA duas vezes pelo mesmo titulo na mesma rodada.
+            if (vistos.has(offer.externalId)) continue;
+            vistos.add(offer.externalId);
+            collected.push(offer);
+          }
+        } catch (error) {
+          // Uma vitrine fora do ar nao pode derrubar a rodada inteira.
+          if (stats.errors.length < 3) stats.errors.push(`${category || "todas"}: ${error.message}`);
+        }
+      }
       stats.collected = collected.length;
       if (!collected.length) await this.alert("source-empty", `${settings.label} nao devolveu nenhuma oferta. Verifique se o marketplace mudou a pagina.`);
       for (const offer of await this.select(collected, { ...settings, maxPerRun: limit }, stats)) {
@@ -215,9 +260,79 @@ export class IngestionService {
       if (source) {
         source.lastRunAt = startedAt.toISOString();
         source.lastRunStats = stats;
-        source.cursor = ((source.cursor ?? 0) + 1) % Math.max(1, (source.categories ?? []).length);
+        // Avanca pelo que ESTA rodada varreu, senao a proxima repete o que
+        // acabou de sair da vitrine e o rodizio nunca fecha a volta.
+        const passo = Math.max(1, stats.categories?.length ?? 1);
+        source.cursor = ((source.cursor ?? 0) + passo) % Math.max(1, (source.categories ?? []).length);
       }
     });
+    return stats;
+  }
+
+  /**
+   * Recebe produtos colhidos pela extensao no navegador do dono.
+   *
+   * O caminho normal le a vitrine `/ofertas` pelo servidor. Ele nao alcanca as
+   * paginas de loja oficial das marcas, que montam a lista por JavaScript, nem
+   * a busca, que responde com anti-bot a quem nao e navegador. A extensao ve as
+   * duas, porque e um Chrome de verdade e ja logado.
+   *
+   * O que chega aqui e MATERIA-PRIMA, nao oferta pronta: passa pelos mesmos
+   * filtros, pela mesma IA e pelas mesmas regras de destino da vitrine. A unica
+   * diferenca e de onde veio — e quem manda continua sendo este servico.
+   */
+  async harvest({ produtos = [], origem = "extensao", sourceId = "mercado-livre" } = {}) {
+    if (!Array.isArray(produtos) || !produtos.length) return { recebidos: 0, enqueued: 0, rejected: 0 };
+    const configuradas = await this.list();
+    // A fonte da colheita e a mesma da vitrine: e dela que vem o marketplace, os
+    // filtros de preco e desconto e o teto por rodada. Se ela nao existe, nao ha
+    // regra para aplicar, e enfileirar sem regra e pior do que nao enfileirar.
+    const settings = configuradas.find((item) => item.id === sourceId) ?? configuradas[0];
+    if (!settings) throw new Error(`Fonte ${sourceId} nao configurada`);
+
+    const stats = { sourceId: settings.id, origem, collected: produtos.length, rejected: 0, duplicated: 0, enqueued: 0, errors: [] };
+    const { capacity, room } = await this.queueRoom();
+    const limite = capacity > 0 ? Math.max(0, room) : (settings.maxPerRun ?? 8);
+    if (!limite) return { ...stats, skipped: "fila cheia" };
+
+    const candidatos = produtos.map((item) => ({
+      externalId: String(item.externalId ?? "").trim(),
+      marketplace: settings.marketplace ?? "Mercado Livre",
+      title: String(item.title ?? "").trim(),
+      currentPrice: Number(item.currentPrice),
+      originalPrice: Number(item.originalPrice) || null,
+      imageUrl: item.imageUrl ?? null,
+      affiliateUrl: item.productUrl ?? null,
+      rating: Number(item.rating) || null,
+      soldCount: Number(item.soldCount) || null,
+      soldLabel: item.soldLabel ?? null,
+      sellerName: item.sellerName ?? null,
+      officialStore: Boolean(item.officialStore),
+      category: item.category ?? null,
+      sourceId: settings.id,
+      sourceContext: { origem, url: item.pageUrl ?? null }
+    }));
+
+    for (const offer of await this.select(candidatos, { ...settings, maxPerRun: limite }, stats)) {
+      try {
+        const link = await this.affiliateLinkService.linkFor(offer);
+        const resultado = await this.queueService.enqueue({
+          ...offer, affiliateUrl: link.url, affiliateTagged: link.attributed, awaitingLink: Boolean(link.pending)
+        });
+        if (resultado?.skipped) {
+          stats.rejected += 1;
+          stats.noDestination = (stats.noDestination ?? 0) + 1;
+          await this.remember(offer);
+          continue;
+        }
+        if (link.pending) stats.awaitingLink = (stats.awaitingLink ?? 0) + 1;
+        await this.remember(offer);
+        stats.enqueued += 1;
+      } catch (error) {
+        stats.rejected += 1;
+        if (stats.errors.length < 3) stats.errors.push(error.message);
+      }
+    }
     return stats;
   }
 
@@ -232,7 +347,17 @@ export class IngestionService {
         stats.rejected += 1;
         continue;
       }
-      if (this.rejectionReason(offer, settings)) { stats.rejected += 1; continue; }
+      const motivo = this.rejectionReason(offer, settings);
+      if (motivo) {
+        stats.rejected += 1;
+        // Contar POR MOTIVO, nao so o total. "47 filtrados" nao diz nada; "47
+        // por falta de avaliacao" diz onde esta o problema. Foi o que revelou,
+        // em 11/09/2026, que a colheita da extensao era descartada inteira por
+        // nao trazer nota nem numero de vendas.
+        stats.rejectedBy = stats.rejectedBy ?? {};
+        stats.rejectedBy[motivo] = (stats.rejectedBy[motivo] ?? 0) + 1;
+        continue;
+      }
       const previous = memory.get(productKey(offer));
       if (previous && offer.currentPrice > previous.minPrice * (1 - this.config.ingestion.priceDropTolerance)) { stats.duplicated += 1; continue; }
       candidates.push(offer);

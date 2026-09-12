@@ -24,6 +24,11 @@ const RECENT_WINDOW = 5;
 const REPEATED_NICHE_PENALTY = 6;
 const REPEATED_NICHE_CAP = 18;
 const SIMILAR_TITLE_PENALTY = 30;
+// Pesa mais que repetir nicho (6) e menos que produto quase igual (30): duas
+// ofertas da mesma marca nao sao o mesmo produto, mas tres seguidas fazem o
+// canal parecer catalogo de uma loja so.
+const SAME_BRAND_PENALTY = 14;
+const SAME_BRAND_CAP = 42;
 // Proporcao, nao contagem: titulo de produto e curto, e exigir 3 palavras iguais
 // deixava passar o caso mais comum — duas creatinas de marcas diferentes so
 // compartilham "creatina" e "monohidratada". Metade das palavras em comum ja e o
@@ -113,7 +118,40 @@ export function repetitionPenalty(offer, offerNicheIds = [], recent = []) {
   });
   if (parecido) penalidade += SIMILAR_TITLE_PENALTY;
 
+  // Repetir a MARCA e o que mais denuncia um canal automatico. A colheita traz
+  // as lojas uma a uma — 48 produtos da Avon de uma vez —, entao sem esta
+  // penalidade o canal publica um bloco inteiro de Avon, depois um bloco de
+  // Eudora. Cresce a cada repeticao para que a terceira da mesma marca perca
+  // para qualquer oferta de outra.
+  const marca = marcaDe(offer);
+  if (marca) {
+    const mesmas = janela.filter((item) => marcaDe(item) === marca).length;
+    penalidade += Math.min(SAME_BRAND_CAP, mesmas * SAME_BRAND_PENALTY);
+  }
+
   return penalidade;
+}
+
+/**
+ * A marca de uma oferta ou de uma publicacao ja feita.
+ *
+ * SO o vendedor, que vem do selo da vitrine e e confiavel. Tentei cair para a
+ * primeira palavra do titulo e o resultado foi pior que nada: em titulo de
+ * marketplace a primeira palavra costuma ser o TIPO do produto, nao a marca —
+ * "Creatina 1kg Growth" viraria a marca "creatina", e duas creatinas de
+ * fabricantes diferentes seriam tratadas como a mesma loja.
+ *
+ * Sem vendedor nao ha penalidade de marca. A de titulo parecido ja cobre o caso
+ * de dois produtos quase iguais.
+ */
+export function marcaDe(item) {
+  const vendedor = String(item?.sellerName ?? "").trim().toLowerCase();
+  if (!vendedor) return null;
+  // "NIINA SECRETS por Eudora" e "EUDORA" sao a mesma casa: o ML escreve a loja
+  // e, depois de " por ", quem a opera. Sem juntar as duas, intercalar marcas
+  // deixa passar Eudora seguida de Eudora com dois nomes diferentes na tela.
+  const [, operadora] = vendedor.split(/\s+por\s+/);
+  return (operadora ?? vendedor).trim() || null;
 }
 
 export function scoreForDestination(offer, destination, { nicheIds = [], recent = [], riskyKeywords = [] } = {}) {

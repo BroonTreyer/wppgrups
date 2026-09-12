@@ -85,11 +85,19 @@ test("em vestuario o canal exige a marcacao feminina", () => {
 });
 
 test("o teto de preco do canal barra o eletrodomestico caro por regra", () => {
+  // O teto subiu de 400 para 700 em 10/09/2026 a pedido do dono do canal, entao
+  // o que prova a regra agora e um preco acima de 700 — 620 passa de proposito.
   const caro = service.blockReason({
-    destination: canal, offer: { ...OFFER, title: "Air Fryer Digital 12 Litros", currentPrice: 620, originalPrice: 900 },
+    destination: canal, offer: { ...OFFER, title: "Air Fryer Digital 12 Litros", currentPrice: 820, originalPrice: 1200 },
     nicheIds: ["home"], publications: [], now: AGORA
   });
   assert.match(String(caro), /passa do teto/);
+
+  const dentro = service.blockReason({
+    destination: canal, offer: { ...OFFER, title: "Air Fryer Digital 12 Litros", currentPrice: 620, originalPrice: 900 },
+    nicheIds: ["home"], publications: [], now: AGORA
+  });
+  assert.equal(dentro, null, "620 cabe no teto novo");
 });
 
 test("o veredito da IA barra o que nenhuma palavra pegaria", () => {
@@ -200,4 +208,51 @@ test("blusa nao e sinal de genero", () => {
   // O que tem marcacao de verdade continua entrando.
   assert.equal(motivo("Blusa Feminina Cropped Canelada Manga Longa", ["fashion"]), null);
   assert.equal(motivo("Vestido Midi Floral Manga Bufante", ["fashion"]), null);
+});
+
+test("aparelho de cabelo entra por saturacao, sem acusar o produto", () => {
+  for (const titulo of [
+    "Secador De Cabelo 2000 Watts - Style Pro Taiff",
+    "Prancha Taiff Gloss Blue Ceramica com Macadamia",
+    "Chapinha Lizze Profissional 480 Extreme",
+    "Modelador De Cachos 3 Em 1 Gokoco Gd034",
+    "Escova Rotativa Mondial Turbo 5 Em 1 Tourmaline",
+    "Pente Alisador E Ondulador Gd040 Gokoco"
+  ]) {
+    const razao = motivo(titulo, ["beauty"]);
+    assert.match(String(razao), /esta saturado neste canal/, titulo);
+  }
+});
+
+test("silenciar aparelho de cabelo nao derruba cosmetico capilar", () => {
+  for (const titulo of [
+    "Wella Invigo Nutri Enrich Shampoo - 1000ml",
+    "Oleo Capilar Elseve Extraordinario 100ml",
+    "Mascara Keune Care Keratin Smooth 200ml",
+    "Touca De Cetim Dupla Face Grande Anti Frizz"
+  ]) {
+    assert.equal(motivo(titulo, ["beauty"]), null, titulo);
+  }
+});
+
+test("canal que exige loja oficial recusa vendedor comum", () => {
+  const soOficial = { ...canal, requireOfficialStore: true };
+  const service2 = new PublicationService({
+    store: { read: async () => ({ destinations: [soOficial], publications: [], deliveryEvents: [], offers: [], queue: [] }) },
+    zapi: {}, config: { limits: {} }, clock: () => AGORA
+  });
+  const avaliar = (offer) => service2.blockReason({
+    destination: soOficial, offer: { ...OFFER, title: "Serum Facial Vitamina C", ...offer },
+    nicheIds: ["beauty"], publications: [], now: AGORA
+  });
+  assert.match(String(avaliar({ officialStore: false, sellerName: "LOJA DO JOAO" })), /so publica de loja oficial/);
+  assert.equal(avaliar({ officialStore: true, sellerName: "NATURA" }), null);
+});
+
+test("sem a exigencia, vendedor comum continua passando", () => {
+  const avaliar = (offer) => service.blockReason({
+    destination: canal, offer: { ...OFFER, title: "Serum Facial Vitamina C", ...offer },
+    nicheIds: ["beauty"], publications: [], now: AGORA
+  });
+  assert.equal(avaliar({ officialStore: false, sellerName: "LOJA DO JOAO" }), null);
 });

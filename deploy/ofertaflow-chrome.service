@@ -1,0 +1,31 @@
+[Unit]
+Description=OfertaFlow — Chrome com a extensao (gerador de link e colheita)
+After=ofertaflow.service display-manager.service
+Wants=ofertaflow.service
+
+[Service]
+Type=simple
+User=ofertaflow
+
+# O Chrome precisa de sessao grafica de verdade. Headless nao serve: a colheita
+# das lojas de marca e o gerador de link do painel de afiliados dependem de um
+# navegador logado, e o Mercado Livre devolve anti-bot para quem nao e navegador.
+# :1 e o display do VNC criado no provisionamento.
+Environment=DISPLAY=:1
+
+# O perfil e PERSISTENTE de proposito: e nele que mora a sessao do painel de
+# afiliados. Perder essa pasta significa logar de novo por VNC.
+ExecStart=/usr/bin/google-chrome \
+  --user-data-dir=/opt/ofertaflow/chrome-profile \
+  --load-extension=/opt/ofertaflow/extension \
+  --disable-extensions-except=/opt/ofertaflow/extension \
+  --no-first-run \
+  --no-default-browser-check \
+  --disable-session-crashed-bubble \
+  --restore-last-session
+
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -142,3 +142,26 @@ test("usa o backup quando o arquivo principal some", async () => {
   const segundo = new JsonStore(file, { onRecovery: () => {} });
   assert.deepEqual((await segundo.read()).queue, [{ id: "a" }]);
 });
+
+test("um mutator que lanca nao derruba as gravacoes seguintes", async () => {
+  const store = new JsonStore(await newFile());
+
+  await assert.rejects(
+    () => store.update((state) => { state.queue.find((i) => i.id === "sumiu").status = "x"; }),
+    /Cannot (set|read) propert/
+  );
+
+  // O erro e de quem chamou, nao da fila de escrita: encadear a promise
+  // rejeitada em `writeQueue` envenenava TODAS as escritas seguintes, e o
+  // sistema inteiro parava de gravar reportando o erro de um mutator alheio.
+  await store.update((state) => { state.queue.push({ id: "depois", status: "queued" }); });
+  const state = await store.read();
+  assert.deepEqual(state.queue.map((i) => i.id), ["depois"]);
+
+  // E continua serializando normalmente depois do tropeco.
+  await Promise.all([
+    store.update((s) => { s.queue.push({ id: "a" }); }),
+    store.update((s) => { s.queue.push({ id: "b" }); })
+  ]);
+  assert.equal((await store.read()).queue.length, 3);
+});
