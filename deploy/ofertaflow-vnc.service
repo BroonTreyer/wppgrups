@@ -1,0 +1,20 @@
+[Unit]
+Description=OfertaFlow — sessao grafica (X) para o Chrome da extensao
+After=network.target
+Before=ofertaflow-chrome.service
+
+[Service]
+Type=forking
+User=ofertaflow
+# -localhost yes: escuta so em 127.0.0.1; a unica entrada e o tunel SSH do dono.
+# Sem senha propria de VNC de proposito — seria mais um segredo para guardar,
+# protegendo algo que o SSH ja protege por chave.
+ExecStartPre=-/usr/bin/vncserver -kill :1
+ExecStartPre=-/bin/rm -f /tmp/.X1-lock /tmp/.X11-unix/X1
+ExecStart=/usr/bin/vncserver :1 -localhost yes -SecurityTypes None -geometry 1600x900 -depth 24
+ExecStop=/usr/bin/vncserver -kill :1
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

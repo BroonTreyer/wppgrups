@@ -4,7 +4,14 @@ Estes arquivos são a metade OfertaFlow da migração. O roteiro completo, com o
 dois sistemas em ordem, está em `dubflow/deploy/README.md`.
 
 - `ofertaflow.service` — painel, ingestão e publicação (Node).
+- `ofertaflow-vnc.service` — a sessão gráfica (X) em que o Chrome roda.
 - `ofertaflow-chrome.service` — Chrome com a extensão, na sessão gráfica.
+
+O VNC precisa ser serviço, e não um comando dado à mão uma vez. Ele foi subido
+manualmente na migração de 12/09/2026 e sobreviveria até o primeiro reboot: sem
+sessão gráfica o Chrome não sobe, sem Chrome não há link de afiliado, e sem link
+nada sai da fila. O sistema pareceria vivo — painel no ar, colheita rodando — e
+não publicaria mais nada. Daí o `Before=ofertaflow-chrome.service`.
 
 ## Por que o Chrome é um serviço
 
