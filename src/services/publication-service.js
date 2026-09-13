@@ -4,6 +4,7 @@ import { effectiveInterval, isDeadHour } from "../domain/timing.js";
 import { formatOfferCaption } from "../domain/message.js";
 import { isAttributedLink } from "../domain/affiliate.js";
 import { marcaDe } from "../domain/targeting.js";
+import { dailyCap } from "../domain/limits.js";
 
 const days = (value) => value * 24 * 60 * 60 * 1000;
 const hours = (value) => value * 60 * 60 * 1000;
@@ -179,7 +180,10 @@ export class PublicationService {
     const destinationPosts = destinationPostsParam ?? publications.filter((item) => (item.destinationId ?? item.groupId) === destination.id && item.status === "sent");
     const today = diaBr(now);
     const dailyCount = destinationPosts.filter((item) => diaBr(item.createdAt) === today).length;
-    if (dailyCount >= destination.maxDailyPosts) return `limite diario atingido (${dailyCount}/${destination.maxDailyPosts})`;
+    // Teto `null` = sem teto. Comparar com o valor cru bloquearia TUDO: em JS
+    // `n >= null` vira `n >= 0`, sempre verdadeiro. Ver `dailyCap`.
+    const teto = dailyCap(destination);
+    if (dailyCount >= teto) return `limite diario atingido (${dailyCount}/${teto})`;
     // O intervalo respira com a hora: encolhe no pico, estica em hora morna e
     // fecha de madrugada. O teto diario acima continua valendo, entao isto
     // redistribui o volume do dia — nao aumenta.

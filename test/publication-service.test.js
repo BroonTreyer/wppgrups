@@ -124,6 +124,38 @@ test("em full time a madrugada publica como qualquer hora", async () => {
   assert.equal(motivo, null);
 });
 
+test("o teto diario barra quando cheio e libera quando ha vaga", () => {
+  const destino = destination("g", ["electronics"], { maxDailyPosts: 3 });
+  const estado = { destinations: [destino], publications: [], deliveryEvents: [], offers: [], queue: [] };
+  const hoje = (quantos) => Array.from({ length: quantos }, (_, i) => ({
+    destinationId: "g", status: "sent", createdAt: `2026-09-02T1${i}:00:00Z`, title: `Item ${i}`, nicheIds: ["home"]
+  }));
+  const motivo = (quantos) => naHora(estado, "2026-09-02T23:30:00Z").blockReason({
+    destination: destino, offer: OFFER, nicheIds: ["electronics"],
+    publications: hoje(quantos), now: new Date("2026-09-02T23:30:00Z")
+  });
+  assert.equal(motivo(2), null);
+  assert.match(String(motivo(3)), /limite diario atingido \(3\/3\)/);
+});
+
+test("destino SEM teto diario nunca e barrado por limite", () => {
+  // Em JS `n >= null` vira `n >= 0` e e sempre verdadeiro: lendo o campo cru,
+  // um destino sem teto era barrado ja na PRIMEIRA publicacao do dia, e a
+  // mensagem dizia "limite diario atingido (0/null)". O destino emudecia por
+  // completo, com a fila cheia e sem erro em lugar nenhum.
+  const destino = destination("g", ["electronics"], { maxDailyPosts: null });
+  const estado = { destinations: [destino], publications: [], deliveryEvents: [], offers: [], queue: [] };
+  const comHistorico = (quantos) => Array.from({ length: quantos }, (_, i) => ({
+    destinationId: "g", status: "sent", createdAt: `2026-09-02T0${i % 10}:00:00Z`, title: `Item ${i}`, nicheIds: ["home"]
+  }));
+  const motivo = (quantos) => naHora(estado, "2026-09-02T23:30:00Z").blockReason({
+    destination: destino, offer: OFFER, nicheIds: ["electronics"],
+    publications: comHistorico(quantos), now: new Date("2026-09-02T23:30:00Z")
+  });
+  assert.equal(motivo(0), null, "barrou logo na primeira do dia");
+  assert.equal(motivo(5000), null, "barrou depois de 5000 no dia");
+});
+
 test("dentro da rajada vale o intervalo do destino; fora, nada sai", () => {
   const destino = destination("g", ["electronics"], { minMinutesBetweenPosts: 12 });
   const estado = { destinations: [destino], publications: [], deliveryEvents: [], offers: [], queue: [] };

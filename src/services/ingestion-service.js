@@ -2,6 +2,7 @@ import { discountPercentage, minutesUntilExpiry, productKey, validateOffer } fro
 import { inferNiches } from "../domain/niches.js";
 import { isRisky, scoreOffer } from "../domain/scoring.js";
 import { SessionExpiredError } from "./affiliate-link-service.js";
+import { dailyCap, postsPerHour } from "../domain/limits.js";
 
 const DEFAULT_FILTERS = { enabled: false, minDiscount: 20, maxDiscount: 90, minRating: 4.3, minSold: 500, minPrice: 0, maxPrice: 400, sweetSpotMin: 25, sweetSpotMax: 200, maxPerRun: 8, maxPerNiche: 2, categoriesPerRun: 1, blockedKeywords: [], categories: [] };
 // Os tetos de `maxPerRun` e `maxPerNiche` eram 50: suficiente para um destino,
@@ -176,16 +177,24 @@ export class IngestionService {
     if (!actives.length) return { queued, capacity: 0, room: Number.POSITIVE_INFINITY };
     const day = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(this.clock());
     const sentToday = state.publications.filter((item) => item.status === "sent" && new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date(item.createdAt)) === day);
-    const dailyRoom = actives.reduce((total, destination) => total + Math.max(0, destination.maxDailyPosts - sentToday.filter((item) => (item.destinationId ?? item.groupId) === destination.id).length), 0);
+    // Sem teto, o espaco diario e infinito e quem manda no tamanho da fila passa
+    // a ser so o horizonte. Com o valor cru, `null - enviados` daria NEGATIVO, o
+    // espaco zeraria e a colheita pararia — o canal secando de fome com o painel
+    // mostrando um destino saudavel. Ver `dailyCap`.
+    const dailyRoom = actives.reduce((total, destination) => total + Math.max(0, dailyCap(destination) - sentToday.filter((item) => (item.destinationId ?? item.groupId) === destination.id).length), 0);
     // Vazao da FROTA, nao de um destino. O calculo antigo usava so o canal mais
     // rapido — fazia sentido quando uma oferta ia para todos os destinos de uma
     // vez, porque uma oferta ocupava um slot de todo mundo. Com a regra de "uma
     // oferta, um destino", cada canal consome ofertas proprias: seis canais a 12
     // min pedem 30 ofertas por hora, e o horizonte de um so canal segurava a fila
     // em 10. A coleta varria 384 produtos e aprovava 1.
-    const porHora = actives.reduce(
-      (total, destination) => total + 60 / Math.max(1, destination.minMinutesBetweenPosts || 1), 0
-    );
+    //
+    // A RAJADA tambem conta, e nao contava. `60 / intervalo` mede o espacamento
+    // das janelas, nao quantas mensagens saem em cada uma: com 25 a cada 10 min
+    // a conta dava 6/h enquanto o grupo entregava 150/h, e a fila era abastecida
+    // para um vigesimo quinto do consumo. Media em 12/09/2026: 6 posts as 10h e
+    // 1 as 11h, com 2.536 ofertas vivas paradas no banco esperando vaga na fila.
+    const porHora = actives.reduce((total, destination) => total + postsPerHour(destination), 0);
     const horizon = Math.ceil(porHora * this.config.freshness.queueHorizonHours);
     const capacity = Math.max(1, Math.min(horizon, dailyRoom));
     return { queued, capacity, room: Math.max(0, capacity - queued) };

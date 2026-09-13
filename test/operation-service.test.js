@@ -114,3 +114,61 @@ test("recusa janela invertida ou fora do dia", async () => {
   await assert.rejects(() => service.setWindow({ start: -1, end: 10 }), /entre 0 e 23/);
   await assert.rejects(() => service.setWindow({ start: 8, end: 25 }), /entre 1 e 24/);
 });
+
+test("destino sem teto aparece como null na API, nunca como Infinity", async () => {
+  // `JSON.stringify(Infinity)` ja vira `null`, mas por acidente — e enquanto o
+  // valor circula do lado do servidor ele contamina qualquer soma que passe por
+  // ele. O `null` aqui e deliberado e significa "sem limite".
+  const store = new MemoryStore({
+    ...baseState,
+    destinations: [{ id: "g1", name: "Grupo 1", type: "group", active: true, maxDailyPosts: null, minMinutesBetweenPosts: 10, burstSize: 25 }]
+  });
+  const status = await new OperationService({ store, config, clock }).status();
+  const [destino] = status.destinations;
+  assert.equal(destino.maxDailyPosts, null);
+  assert.equal(destino.remainingToday, null);
+  assert.equal(status.limitToday, null, "somar teto ausente inventaria um limite que nao existe");
+  assert.equal(Number.isFinite(destino.feasibleToday), true, "o que cabe hoje ainda e finito: o ritmo limita");
+  assert.equal(status.overbooked.length, 0, "sem teto nao ha promessa que o ritmo deixe de cumprir");
+});
+
+test("a capacidade anunciada conta a rajada, nao so o intervalo", async () => {
+  // Antes isto dizia 144/dia (1440 min / 10) enquanto o grupo entregava 1.000, e
+  // `overbooked` acusava de irrealista exatamente a configuracao que funcionava.
+  const store = new MemoryStore({
+    ...baseState,
+    destinations: [{ id: "g1", name: "Grupo 1", type: "group", active: true, maxDailyPosts: 1000, minMinutesBetweenPosts: 10, burstSize: 25 }]
+  });
+  const status = await new OperationService({ store, config, clock }).status();
+  // Janela de 8h as 23h = 15h; 150 por hora.
+  assert.equal(status.perDayByInterval, 2250);
+  assert.equal(status.overbooked.length, 0, "1000 cabe em 2250");
+});
+
+test("sem teto e um inteiro sao dois jeitos validos de definir o limite", async () => {
+  const store = new MemoryStore(baseState);
+  const service = new OperationService({ store, config, clock });
+
+  const definido = await service.setDailyLimit(300);
+  assert.equal(definido.maxDailyPosts, 300);
+
+  // Sem teto o intervalo NAO pode ser recalculado: `intervalFor(null)` divide
+  // por zero e devolveria Infinity, destruindo o espacamento do destino.
+  const antes = store.state.destinations[0].minMinutesBetweenPosts;
+  const semLimite = await service.setDailyLimit(null);
+  assert.equal(semLimite.maxDailyPosts, null);
+  assert.equal(store.state.destinations[0].maxDailyPosts, null);
+  assert.equal(store.state.destinations[0].minMinutesBetweenPosts, antes, "o intervalo foi destruido");
+
+  await assert.rejects(() => service.setDailyLimit(0), /entre 1 e/);
+  await assert.rejects(() => service.setDailyLimit(999999), /entre 1 e/);
+});
+
+test("o teto aceito aqui e o mesmo que o cadastro do destino aceita", async () => {
+  // Este caminho recusava acima de 500 enquanto o cadastro ja gravava 1000: usar
+  // o painel para qualquer ajuste ABAIXAVA o limite sem avisar ninguem.
+  const store = new MemoryStore(baseState);
+  const service = new OperationService({ store, config, clock });
+  const alto = await service.setDailyLimit(1000);
+  assert.equal(alto.maxDailyPosts, 1000);
+});

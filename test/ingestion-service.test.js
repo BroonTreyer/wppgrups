@@ -222,6 +222,37 @@ test("o teto diario ainda limita a capacidade", async () => {
   assert.equal(capacity, 3, `esperava 3, veio ${capacity}`);
 });
 
+test("destino SEM teto nao estrangula a colheita", async () => {
+  // A falha que este teste tranca e muda: `null - enviadosHoje` da negativo, o
+  // espaco diario zera e a ingestao para de colher. O destino fica sem estoque
+  // justamente por nao ter limite — e o painel nao acusa nada, porque do ponto
+  // de vista dele o destino esta ativo e saudavel.
+  const store = new MemoryStore();
+  store.state.destinations = [{ id: "d0", active: true, maxDailyPosts: null, minMinutesBetweenPosts: 12 }];
+  store.state.publications = Array.from({ length: 800 }, () => ({
+    destinationId: "d0", status: "sent", createdAt: new Date().toISOString()
+  }));
+  const { service } = build({ store });
+  const { capacity } = await service.queueRoom();
+  // Sem teto quem manda e o horizonte: 5 posts/hora x 2h. Nunca 0.
+  assert.equal(capacity, 10, `esperava 10, veio ${capacity}`);
+});
+
+test("a fila e dimensionada pela rajada, nao so pelo intervalo", async () => {
+  // Medido em 12/09/2026: com rajada de 25 a cada 10 min o grupo consumia 150
+  // por hora enquanto a fila era abastecida para 6 — um vigesimo quinto. O
+  // resultado era hora em branco (6 posts as 10h, 1 as 11h) com 2.536 ofertas
+  // vivas paradas no banco, esperando vaga numa fila dimensionada errado.
+  const store = new MemoryStore();
+  store.state.destinations = [{
+    id: "d0", active: true, maxDailyPosts: null, minMinutesBetweenPosts: 10, burstSize: 25
+  }];
+  const { service } = build({ store });
+  const { capacity } = await service.queueRoom();
+  // 150/hora x 2h de horizonte.
+  assert.equal(capacity, 300, `esperava 300, veio ${capacity}`);
+});
+
 test("sem destino ativo a coleta nao e limitada por capacidade", async () => {
   const { service } = build({ store: new MemoryStore() });
   const { capacity, room } = await service.queueRoom();

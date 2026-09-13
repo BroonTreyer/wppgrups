@@ -1,4 +1,5 @@
 import { DEFAULT_NICHES } from "../domain/niches.js";
+import { MAX_DAILY_POSTS } from "../domain/limits.js";
 
 const defaultsFor = (type, config) => ({
   maxDailyPosts: type === "channel" ? config.limits.maxPostsPerChannelPerDay : config.limits.maxPostsPerGroupPerDay,
@@ -60,13 +61,24 @@ export class DestinationService {
         if (patch.active && destination.available === false) throw new Error("Sincronize novamente antes de ativar um destino indisponivel");
         destination.active = patch.active;
       }
+      // `maxDailyPosts: null` = SEM TETO, e precisa passar antes do laco: la o
+      // `Number(null)` vira 0 e cai fora da faixa, entao a unica forma de dizer
+      // "sem limite" seria recusada. Quem consome nao pode ler o campo cru — ver
+      // `dailyCap` em domain/limits.js.
+      //
       // O teto de `maxDailyPosts` era 500, de quando um canal fazia 60 por dia.
       // Subiu para 1000 em 11/09/2026, com a operacao indo para 600 por destino.
+      // Hoje o numero e so guarda contra digito a mais: quem opera sem limite usa
+      // `null`, que e explicito e nao se confunde com engano de digitacao.
+      //
       // `burstSize` vai ate 50 e nao mais: sao mensagens seguidas na tela de quem
       // esta no grupo, e o custo de exagerar aqui aparece na saida de membro, nao
       // em nenhuma metrica do sistema.
-      for (const [field, min, max] of [["minDiscount", 0, 100], ["maxDailyPosts", 1, 1000], ["maxPrice", 0, 1000000], ["minSold", 0, 1000000], ["burstSize", 1, 50], ["brandCooldownPosts", 0, 20]]) {
+      const semTetoPedido = patch.maxDailyPosts === null;
+      if (semTetoPedido) destination.maxDailyPosts = null;
+      for (const [field, min, max] of [["minDiscount", 0, 100], ["maxDailyPosts", 1, MAX_DAILY_POSTS], ["maxPrice", 0, 1000000], ["minSold", 0, 1000000], ["burstSize", 1, 50], ["brandCooldownPosts", 0, 20]]) {
         if (patch[field] === undefined) continue;
+        if (field === "maxDailyPosts" && semTetoPedido) continue;
         const value = Number(patch[field]);
         if (!Number.isInteger(value) || value < min || value > max) throw new Error(`${field} deve ser um inteiro entre ${min} e ${max}`);
         destination[field] = value;

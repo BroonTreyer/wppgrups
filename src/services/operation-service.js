@@ -1,3 +1,5 @@
+import { MAX_DAILY_POSTS, dailyCap, postsPerHour, semTeto } from "../domain/limits.js";
+
 const today = (date) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(date);
 
 export class OperationService {
@@ -27,20 +29,40 @@ export class OperationService {
     return Math.max(this.config.limits.minMinutesFloor, Math.floor(this.windowMinutes() / limit));
   }
 
+  /**
+   * `null` remove o teto diario; um inteiro o define.
+   *
+   * O teto daqui era 500 enquanto o do `destination-service` ja estava em 1000:
+   * este caminho passou a RECUSAR o valor que o outro tinha gravado, e usar o
+   * painel para qualquer ajuste ABAIXAVA o limite sem avisar. Os dois agora leem
+   * o mesmo numero.
+   *
+   * Sem teto o intervalo fica como esta, de proposito. `intervalFor(null)`
+   * dividiria por zero e devolveria Infinity, e o destino sairia daqui com o
+   * espacamento destruido — mudanca que ninguem pediu e que cala o grupo.
+   */
   async setDailyLimit(value, { onlyActive = true } = {}) {
-    const limit = Number(value);
-    if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new Error("maxDailyPosts deve ser um inteiro entre 1 e 500");
-    const interval = this.intervalFor(limit);
-    const feasible = Math.floor(this.windowMinutes() / interval);
+    const remover = value === null;
+    const limit = remover ? null : Number(value);
+    if (!remover && (!Number.isInteger(limit) || limit < 1 || limit > MAX_DAILY_POSTS)) {
+      throw new Error(`maxDailyPosts deve ser um inteiro entre 1 e ${MAX_DAILY_POSTS}, ou null para sem teto`);
+    }
+    const interval = remover ? null : this.intervalFor(limit);
+    const feasible = remover ? null : Math.floor(this.windowMinutes() / interval);
     return this.store.update((state) => {
       const changed = [];
       for (const destination of state.destinations) {
         if (onlyActive && !destination.active) continue;
         destination.maxDailyPosts = limit;
-        destination.minMinutesBetweenPosts = interval;
+        if (interval !== null) destination.minMinutesBetweenPosts = interval;
         changed.push(destination.id);
       }
-      return { maxDailyPosts: limit, minMinutesBetweenPosts: interval, feasiblePerDay: Math.min(limit, feasible), destinations: changed.length };
+      return {
+        maxDailyPosts: limit,
+        minMinutesBetweenPosts: interval,
+        feasiblePerDay: remover ? null : Math.min(limit, feasible),
+        destinations: changed.length
+      };
     });
   }
 
@@ -83,20 +105,35 @@ export class OperationService {
       const nextAvailableAt = last ? new Date(new Date(last.createdAt).getTime() + destination.minMinutesBetweenPosts * 60000) : null;
       const minutesLeft = Math.max(0, (this.config.scheduler.endHour - Number(new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", hourCycle: "h23", timeZone: "America/Sao_Paulo" }).format(now))) * 60);
       const stillFits = Math.floor(minutesLeft / Math.max(1, destination.minMinutesBetweenPosts));
+      // `stillFits` conta JANELAS restantes; cada uma solta `burstSize` posts.
+      const cabeAinda = Math.floor(stillFits * Math.max(1, Number(destination.burstSize) || 1));
       return {
         minMinutesBetweenPosts: destination.minMinutesBetweenPosts,
-        feasibleToday: Math.min(destination.maxDailyPosts, publishedToday + stillFits),
+        burstSize: destination.burstSize ?? 1,
+        // Math.min com Infinity devolve o outro lado: sem teto, o que cabe hoje e
+        // so o que o ritmo alcanca.
+        feasibleToday: Math.min(dailyCap(destination), publishedToday + cabeAinda),
         id: destination.id,
         name: destination.name || destination.id,
         type: destination.type,
-        maxDailyPosts: destination.maxDailyPosts,
+        // Na API o "sem teto" e `null`, nunca `Infinity`: JSON.stringify(Infinity)
+        // vira `null` de qualquer jeito, mas por acidente — e `Infinity` num
+        // campo numerico contamina qualquer soma que o painel faca com ele.
+        maxDailyPosts: semTeto(destination) ? null : dailyCap(destination),
         publishedToday,
-        remainingToday: Math.max(0, destination.maxDailyPosts - publishedToday),
+        remainingToday: semTeto(destination) ? null : Math.max(0, dailyCap(destination) - publishedToday),
         nextAvailableAt: nextAvailableAt && nextAvailableAt > now ? nextAvailableAt.toISOString() : null
       };
     });
-    const perDayByInterval = destinations.length ? Math.floor(this.windowMinutes() / Math.max(1, Math.min(...destinations.map((item) => item.minMinutesBetweenPosts)))) : 0;
-    const overbooked = destinations.filter((item) => item.maxDailyPosts > Math.floor(this.windowMinutes() / Math.max(1, item.minMinutesBetweenPosts)));
+    // Capacidade REAL do ritmo, com a rajada. Sem ela estes dois numeros diziam
+    // 144/dia enquanto o grupo entregava 1.000 — e `overbooked` acusava de
+    // "irrealista" justamente a configuracao que estava funcionando.
+    const porHoraDaFrota = destinations.reduce((total, item) => total + postsPerHour(item), 0);
+    const perDayByInterval = Math.floor(porHoraDaFrota * this.windowMinutes() / 60);
+    const realista = (item) => Math.floor(postsPerHour(item) * this.windowMinutes() / 60);
+    // Destino sem teto nunca esta "overbooked": nao ha numero prometido para o
+    // ritmo deixar de cumprir.
+    const overbooked = destinations.filter((item) => item.maxDailyPosts !== null && item.maxDailyPosts > realista(item));
     const queue = state.queue.reduce((totals, item) => ({ ...totals, [item.status]: (totals[item.status] ?? 0) + 1 }), {});
     return {
       running: state.operation?.running === true,
@@ -109,9 +146,14 @@ export class OperationService {
       queued: queue.queued ?? 0,
       publishedToday: destinations.reduce((total, item) => total + item.publishedToday, 0),
       capacityToday: destinations.reduce((total, item) => total + item.feasibleToday, 0),
-      limitToday: destinations.reduce((total, item) => total + item.maxDailyPosts, 0),
+      // Um so destino sem teto torna a soma sem sentido: `null` diz "sem limite
+      // de frota", enquanto somar tratando-o como zero inventaria um teto que
+      // nao existe e faria o painel anunciar escassez no meio da fartura.
+      limitToday: destinations.some((item) => item.maxDailyPosts === null)
+        ? null
+        : destinations.reduce((total, item) => total + item.maxDailyPosts, 0),
       perDayByInterval,
-      overbooked: overbooked.map((item) => ({ name: item.name, maxDailyPosts: item.maxDailyPosts, minMinutesBetweenPosts: item.minMinutesBetweenPosts, realistic: Math.floor(this.windowMinutes() / Math.max(1, item.minMinutesBetweenPosts)) })),
+      overbooked: overbooked.map((item) => ({ name: item.name, maxDailyPosts: item.maxDailyPosts, minMinutesBetweenPosts: item.minMinutesBetweenPosts, realistic: realista(item) })),
       activeDestinations: destinations.length,
       destinations
     };

@@ -50,3 +50,28 @@ test("burstSize so aceita inteiro entre 1 e 50", async () => {
   await assert.rejects(() => service.configure("g", { burstSize: 51 }), /burstSize/);
   assert.equal(store.state.destinations[0].burstSize, 15, "pedido invalido nao altera o destino");
 });
+
+test("aceita null como 'sem teto' e recusa numero fora da faixa", async () => {
+  const store = new MemoryStore();
+  store.state.destinations.push({ id: "g1", name: "Grupo", type: "group", active: true, maxDailyPosts: 1000, minMinutesBetweenPosts: 10 });
+  const service = new DestinationService({
+    store,
+    zapi: { getGroups: async () => [], getChannels: async () => [] },
+    config: { limits: { maxPostsPerChannelPerDay: 40, maxPostsPerGroupPerDay: 12, channelMinutesBetweenPosts: 20, groupMinutesBetweenPosts: 45 } }
+  });
+
+  // `null` precisa passar ANTES do laco de faixa: la `Number(null)` e 0, cai
+  // fora de [1, MAX] e a unica forma de dizer "sem limite" seria recusada.
+  await service.configure("g1", { maxDailyPosts: null });
+  assert.equal(store.state.destinations[0].maxDailyPosts, null);
+
+  await service.configure("g1", { maxDailyPosts: 1500 });
+  assert.equal(store.state.destinations[0].maxDailyPosts, 1500);
+
+  await assert.rejects(() => service.configure("g1", { maxDailyPosts: 0 }), /inteiro entre/);
+  await assert.rejects(() => service.configure("g1", { maxDailyPosts: 99999 }), /inteiro entre/);
+  // O patch do chamador nao pode ser mutado pelo caminho do null.
+  const patch = { maxDailyPosts: null };
+  await service.configure("g1", patch);
+  assert.deepEqual(patch, { maxDailyPosts: null });
+});
