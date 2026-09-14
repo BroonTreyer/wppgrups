@@ -25,7 +25,7 @@ function send(response, status, body) {
   response.end(JSON.stringify(body, null, 2));
 }
 
-export function createApp({ config, destinationService, publicationService, queueService, productLinkService, ingestionService, affiliateLinkService, operationService }) {
+export function createApp({ config, destinationService, publicationService, queueService, productLinkService, ingestionService, affiliateLinkService, operationService, memberTracker }) {
   return createServer(async (request, response) => {
     const url = new URL(request.url, config.appBaseUrl);
     try {
@@ -73,6 +73,8 @@ export function createApp({ config, destinationService, publicationService, queu
       }
       if (request.method === "POST" && url.pathname === "/api/affiliate/retry") return send(response, 200, await affiliateLinkService.retryFailed());
       if (request.method === "GET" && url.pathname === "/api/affiliate/status") return send(response, 200, await affiliateLinkService.status());
+      if (request.method === "GET" && url.pathname === "/api/members") return send(response, 200, await memberTracker.status());
+      if (request.method === "POST" && url.pathname === "/api/members/sync") return send(response, 200, await memberTracker.tick());
       if (request.method === "GET" && url.pathname === "/api/operation") return send(response, 200, await operationService.status());
       if (request.method === "POST" && url.pathname === "/api/operation") {
         const body = await jsonBody(request);

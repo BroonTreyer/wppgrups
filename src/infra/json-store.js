@@ -2,7 +2,7 @@ import { copyFile, mkdir, open, readFile, readdir, rename, rm, stat, writeFile }
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const INITIAL_STATE = { destinations: [], publications: [], deliveryEvents: [], offers: [], queue: [], sources: [], seenProducts: [], affiliateLinks: [], affiliateRequests: [], affiliateStatus: null, alerts: [], operation: { running: false } };
+const INITIAL_STATE = { destinations: [], publications: [], deliveryEvents: [], offers: [], queue: [], sources: [], seenProducts: [], affiliateLinks: [], affiliateRequests: [], affiliateStatus: null, alerts: [], operation: { running: false }, memberTracking: { groups: {}, joins: [] } };
 const RETRYABLE = new Set(["EPERM", "EACCES", "EBUSY", "ENOENT"]);
 const TEMP_MAX_AGE = 10 * 60 * 1000;
 const resolveFile = (value) => value instanceof URL ? fileURLToPath(value) : value;

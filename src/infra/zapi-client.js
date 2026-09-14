@@ -30,6 +30,12 @@ export class ZApiClient {
     return this.request("/groups", { method: "GET" });
   }
 
+  // A listagem /chats mente sobre o grupo (ex.: isGroupAnnouncement); so o
+  // metadata traz participantes e configuracao reais.
+  getGroupMetadata(groupId) {
+    return this.request(`/group-metadata/${encodeURIComponent(groupId)}`, { method: "GET" });
+  }
+
   getChannels() {
     return this.request("/newsletter", { method: "GET" });
   }

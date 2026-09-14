@@ -102,6 +102,19 @@ export function loadConfig(env = process.env) {
       clientToken: env.ZAPI_CLIENT_TOKEN ?? "",
       webhookSecret: env.ZAPI_WEBHOOK_SECRET ?? "development-webhook-secret",
       channelImageEnabled: bool(env.ZAPI_CHANNEL_IMAGE_ENABLED, false)
+    },
+    // Medicao de membro REAL para os anuncios (src/services/member-tracker.js).
+    // Sem grupos listados nada roda. Sem token as entradas sao medidas e ficam
+    // pendentes — o Meta aceita ate 7 dias de atraso.
+    meta: {
+      pixelId: env.META_PIXEL_ID ?? "",
+      accessToken: env.META_CAPI_TOKEN ?? "",
+      // Preenchido, os eventos vao so para a aba "Testar eventos" e NAO otimizam nada.
+      testEventCode: env.META_TEST_EVENT_CODE ?? "",
+      eventName: env.META_JOIN_EVENT ?? "Subscribe",
+      eventSourceUrl: env.META_EVENT_SOURCE_URL ?? "https://broontreyer.github.io/-achadinhos/",
+      trackedGroups: (env.MEMBER_TRACKING_GROUPS ?? "").split(",").map((item) => item.trim()).filter(Boolean),
+      pollMinutes: int(env.MEMBER_TRACKING_POLL_MINUTES, 2)
     }
   };
 }
@@ -138,5 +151,7 @@ export function assertSafeConfig(config) {
   // pelo mesmo numero de titulos, e a saida (que domina o custo) nao muda.
   if (config.ai.batchSize < 1 || config.ai.batchSize > 100) throw new Error("AI_CLASSIFIER_BATCH_SIZE deve estar entre 1 e 100");
   if (config.ai.concurrency < 1 || config.ai.concurrency > 20) throw new Error("AI_CLASSIFIER_CONCURRENCY deve estar entre 1 e 20");
+  if (config.meta.pollMinutes < 1) throw new Error("MEMBER_TRACKING_POLL_MINUTES deve ser pelo menos 1");
+  if (config.meta.accessToken && !config.meta.pixelId) throw new Error("Defina META_PIXEL_ID junto com META_CAPI_TOKEN");
   if (!["low", "medium", "high", "xhigh", "max"].includes(config.ai.effort)) throw new Error("AI_CLASSIFIER_EFFORT deve ser low, medium, high, xhigh ou max");
 }

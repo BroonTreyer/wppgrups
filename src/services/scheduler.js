@@ -1,4 +1,4 @@
-export function startScheduler({ queueService, ingestionService, retentionService, operationService, affiliateLinkService, config, logger = console }) {
+export function startScheduler({ queueService, ingestionService, retentionService, operationService, affiliateLinkService, memberTracker, config, logger = console }) {
   const timers = [];
   const every = (seconds, task) => {
     const timer = setInterval(task, seconds * 1000);
@@ -45,6 +45,24 @@ export function startScheduler({ queueService, ingestionService, retentionServic
       if (Object.values(pruned).some(Boolean)) logger.log("Limpeza do historico:", JSON.stringify(pruned));
     } catch (error) {
       logger.error("Falha na limpeza do historico:", error.message);
+    }
+  });
+
+  // Fora do `paused()` de proposito: o anuncio gasta com a operacao pausada ou
+  // nao, e a medicao de quem entrou nao pode parar junto com as publicacoes.
+  if (memberTracker && config.meta?.trackedGroups?.length) every(config.meta.pollMinutes * 60, async () => {
+    try {
+      const result = await memberTracker.tick();
+      for (const group of result.groups) {
+        if (group.error) logger.error(`Membros ${group.groupId}:`, group.error);
+        else if (group.ignored) logger.error(`Membros ${group.groupId}: leitura ignorada (${group.reason})`);
+        else if (group.baseline) logger.log(`Membros ${group.groupId}: base fotografada com ${group.baseline}`);
+        else if (group.joined || group.left) logger.log(`Membros ${group.groupId}: +${group.joined} entraram, -${group.left} sairam (${group.members} no grupo)`);
+      }
+      if (result.sent) logger.log(`Meta: ${result.sent} entrada(s) enviada(s) como conversao`);
+      if (result.error) logger.error("Meta: falha ao enviar entradas:", result.error);
+    } catch (error) {
+      logger.error("Falha na medicao de membros:", error.message);
     }
   });
 
