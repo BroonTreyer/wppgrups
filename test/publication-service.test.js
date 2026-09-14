@@ -113,15 +113,15 @@ const naHora = (state, isoUtc, overrides = {}) => new PublicationService({
   clock: () => new Date(isoUtc)
 });
 
-test("em full time a madrugada publica como qualquer hora", async () => {
+test("a madrugada nao publica; as 5h volta", async () => {
   const estado = { destinations: [destination("g", ["electronics"])], publications: [], deliveryEvents: [], offers: [], queue: [] };
-  // 06:00 UTC = 03:00 em Brasilia. Ate 10/09/2026 isto era bloqueado por
-  // "horario de baixa"; o dono do canal optou por operacao 24h em 11/09.
-  const service = naHora(estado, "2026-09-02T06:00:00Z");
-  const motivo = service.blockReason({
-    destination: estado.destinations[0], offer: OFFER, nicheIds: ["electronics"], publications: [], now: new Date("2026-09-02T06:00:00Z")
+  // 06:00 UTC = 03:00 em Brasilia. Foi 24h de 11/09 a 14/09/2026; o dono do canal
+  // fechou a noite de novo (5h-22h) depois de ver 139 mensagens por hora de madrugada.
+  const motivo = (iso) => naHora(estado, iso).blockReason({
+    destination: estado.destinations[0], offer: OFFER, nicheIds: ["electronics"], publications: [], now: new Date(iso)
   });
-  assert.equal(motivo, null);
+  assert.notEqual(motivo("2026-09-02T06:00:00Z"), null, "3h fechado");
+  assert.equal(motivo("2026-09-02T08:00:00Z"), null, "5h aberto");
 });
 
 test("o teto diario barra quando cheio e libera quando ha vaga", () => {
@@ -169,9 +169,8 @@ test("dentro da rajada vale o intervalo do destino; fora, nada sai", () => {
   assert.equal(motivo("2026-09-02T22:13:00Z", "2026-09-02T22:00:00Z"), null);
   // 22:05 UTC: ainda dentro dos 12 min.
   assert.match(String(motivo("2026-09-02T22:05:00Z", "2026-09-02T22:00:00Z")), /aguardando o intervalo de 12 min/);
-  // Em full time nao ha mais hora morta: 23:13 BRT so respeita o intervalo.
-  assert.equal(motivo("2026-09-03T02:13:00Z", "2026-09-03T02:00:00Z"), null);
-  assert.match(String(motivo("2026-09-03T02:05:00Z", "2026-09-03T02:00:00Z")), /aguardando o intervalo/);
+  // A noite fechou de novo (14/09/2026): 23:13 BRT bloqueia mesmo com o intervalo cumprido.
+  assert.notEqual(motivo("2026-09-03T02:13:00Z", "2026-09-03T02:00:00Z"), null);
 });
 
 test("com a curva desligada o intervalo volta a ser fixo", () => {

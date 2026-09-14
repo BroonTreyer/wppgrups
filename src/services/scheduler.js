@@ -1,4 +1,4 @@
-export function startScheduler({ queueService, ingestionService, retentionService, operationService, affiliateLinkService, memberTracker, config, logger = console }) {
+export function startScheduler({ queueService, ingestionService, retentionService, operationService, affiliateLinkService, memberTracker, dailyClosing, config, logger = console }) {
   const timers = [];
   const every = (seconds, task) => {
     const timer = setInterval(task, seconds * 1000);
@@ -45,6 +45,18 @@ export function startScheduler({ queueService, ingestionService, retentionServic
       if (Object.values(pruned).some(Boolean)) logger.log("Limpeza do historico:", JSON.stringify(pruned));
     } catch (error) {
       logger.error("Falha na limpeza do historico:", error.message);
+    }
+  });
+
+  if (dailyClosing && config.dailyClosing?.groups?.length) every(60, async () => {
+    try {
+      const result = await dailyClosing.tick();
+      for (const item of result.results ?? []) {
+        if (item.sent) logger.log(`Fechamento do dia enviado em ${item.groupId}`);
+        if (item.error) logger.error(`Fechamento do dia em ${item.groupId} falhou (tentativa ${item.attempts}):`, item.error);
+      }
+    } catch (error) {
+      logger.error("Falha no fechamento do dia:", error.message);
     }
   });
 

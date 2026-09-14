@@ -8,21 +8,22 @@ import {
 // Horario de Brasilia = UTC-3.
 const brt = (horaLocal) => new Date(Date.UTC(2026, 8, 2, horaLocal + 3, 0, 0));
 
-test("as 24 horas sao janela: operacao full time", () => {
-  assert.equal(BURST_WINDOWS.length, 24);
+test("as janelas vao das 5h ate a das 21h: o grupo fecha as 22h", () => {
+  assert.equal(BURST_WINDOWS.length, 17);
   const horas = BURST_WINDOWS.map((j) => j.hora).sort((a, b) => a - b);
-  assert.deepEqual(horas, Array.from({ length: 24 }, (_, i) => i));
-  assert.equal(new Set(horas).size, 24, "sem hora repetida");
+  assert.deepEqual(horas, Array.from({ length: 17 }, (_, i) => i + 5));
+  assert.equal(new Set(horas).size, 17, "sem hora repetida");
 });
 
-test("em full time nenhuma hora e morta, madrugada inclusive", () => {
-  // O silencio da madrugada foi removido por decisao do dono do canal. O teste
-  // existe para que a volta dele seja uma escolha explicita, nao um acidente.
-  for (const hora of [0, 1, 2, 3, 4, 5, 12, 22, 23]) {
-    assert.equal(isDeadHour(brt(hora)), false, `${hora}h deveria ser rajada`);
-    assert.equal(effectiveInterval(12, brt(hora)), 12);
-    assert.equal(intervalFactor(brt(hora)), 1);
+test("a noite e morta: das 22h as 5h nada sai", () => {
+  // O silencio da noite voltou por decisao do dono do canal em 14/09/2026. O
+  // teste existe para que reabrir a madrugada seja escolha explicita, nao acidente.
+  for (const hora of [22, 23, 0, 1, 2, 3, 4]) {
+    assert.equal(isDeadHour(brt(hora)), true, `${hora}h deveria estar fechada`);
+    assert.equal(effectiveInterval(12, brt(hora)), Infinity);
+    assert.equal(intervalFactor(brt(hora)), Infinity);
   }
+  for (const hora of [5, 12, 21]) assert.equal(isDeadHour(brt(hora)), false, `${hora}h deveria publicar`);
 });
 
 test("dentro da janela o intervalo e o configurado", () => {
@@ -35,17 +36,15 @@ test("dentro da janela o intervalo e o configurado", () => {
   }
 });
 
-test("a conta do volume fecha: seis destinos a 2 min sustentam 600 cada", () => {
+test("a conta do volume fecha com 17 rajadas", () => {
   // Seis destinos a 2 min: cada um solta 30 na hora da rajada.
   const destinos = Array.from({ length: 6 }, (_, i) => ({ id: `d${i}`, active: true, minMinutesBetweenPosts: 2 }));
   const { porRajada, porDia, rajadas } = burstCapacity(destinos);
   assert.equal(porRajada, 180);
-  assert.equal(rajadas, 24);
-  assert.equal(porDia, 4320, "teto da cadencia; o limite diario de cada destino corta antes");
-  // O alvo e 600 por destino = 3.600 na frota. A cadencia tem que sobrar sobre o
-  // teto diario, nunca o contrario: teto maior que cadencia e promessa vazia.
-  assert.ok(porDia >= 3600, "a cadencia nao sustenta 600 por destino");
-  assert.ok(porDia / destinos.length >= 600, "um destino sozinho nao alcanca 600");
+  assert.equal(rajadas, 17);
+  // Fechar a noite custa volume: 6 destinos a 2 min ja NAO sustentam 600 cada
+  // (510). Quem quiser 600 por destino precisa encurtar o intervalo ou usar rajada.
+  assert.equal(porDia, 3060);
 });
 
 test("destino desligado nao conta no volume", () => {
@@ -56,14 +55,15 @@ test("destino desligado nao conta no volume", () => {
   assert.equal(burstCapacity(destinos).porRajada, 5);
 });
 
-test("a curva do dia marca as 24 horas como rajada", () => {
+test("a curva do dia marca so 5h-21h como rajada", () => {
   const curva = dayCurve(brt(13));
   assert.equal(curva.length, 24);
-  assert.equal(curva.filter((h) => h.peso === 1).length, 24);
+  assert.equal(curva.filter((h) => h.peso === 1).length, 17);
   assert.equal(curva[13].rajada, "tarde-13h");
-  assert.equal(curva[3].rajada, "manha-3h", "a madrugada tambem publica agora");
-  assert.equal(curva[0].rajada, "manha-0h");
-  assert.equal(curva[23].rajada, "noite-23h");
+  assert.equal(curva[5].rajada, "manha-5h");
+  assert.equal(curva[21].rajada, "noite-21h");
+  assert.equal(curva[3].rajada, null, "madrugada fechada");
+  assert.equal(curva[22].rajada, null, "22h e hora do fechamento, nao de oferta");
 });
 
 test("a hora vem do fuso brasileiro, nao do da maquina", () => {
@@ -74,13 +74,11 @@ test("a hora vem do fuso brasileiro, nao do da maquina", () => {
 });
 
 test("denuncia as rajadas que a janela do agendador silencia", () => {
-  // O padrao antigo (8h-23h) matava as rajadas das 6h e das 23h: a checagem da
-  // fila e `hour < endHour`, entao a hora 23 fica de fora mesmo com endHour 23.
-  // Em full time so 0h-24h cobre tudo: qualquer recorte mata rajadas em silencio.
-  assert.deepEqual(burstsOutsideWindow(0, 24), [], "0h-24h cobre as 24 rajadas");
-  assert.deepEqual(burstsOutsideWindow(5, 23).map((j) => j.hora), [0, 1, 2, 3, 4, 23], "5h-23h mata seis");
-  assert.equal(burstsOutsideWindow(8, 23).length, 9, "8h-23h mata nove");
-  assert.equal(burstsOutsideWindow(13, 18).length, 19, "janela estreita silencia dezenove");
+  // A checagem da fila e `hour < endHour`: a janela certa para estas rajadas e 5h-22h.
+  assert.deepEqual(burstsOutsideWindow(5, 22), [], "5h-22h cobre as 17 rajadas");
+  assert.deepEqual(burstsOutsideWindow(5, 21).map((j) => j.hora), [21], "fechar as 21h mata a ultima");
+  assert.equal(burstsOutsideWindow(8, 22).length, 3, "comecar as 8h mata 5h, 6h e 7h");
+  assert.deepEqual(burstsOutsideWindow(0, 24), [], "janela mais larga nao silencia nada");
 });
 
 test("o intervalo aceita fracao de minuto, sem piso escondido", () => {
@@ -90,19 +88,19 @@ test("o intervalo aceita fracao de minuto, sem piso escondido", () => {
   assert.equal(effectiveInterval(0.1, naRajada), 0.1);
   assert.equal(effectiveInterval(6, naRajada), 6);
   assert.equal(effectiveInterval(0, naRajada), 0);
-  // 04:00 UTC = 1h BRT: em full time a madrugada tambem e rajada.
-  assert.equal(effectiveInterval(0.1, new Date("2026-09-08T04:00:00Z")), 0.1);
+  // 04:00 UTC = 1h BRT: madrugada fechada.
+  assert.equal(effectiveInterval(0.1, new Date("2026-09-08T04:00:00Z")), Infinity);
 });
 
 test("a capacidade conta a fracao em vez de mentir 60", () => {
   const { porRajada, porDia } = burstCapacity([{ active: true, minMinutesBetweenPosts: 0.1 }]);
   assert.equal(porRajada, 600, "0.1 min = 6s = 600 por hora");
-  assert.equal(porDia, 14400, "600 por rajada x 24 rajadas");
+  assert.equal(porDia, 10200, "600 por rajada x 17 rajadas");
 });
 
 test("a capacidade multiplica pela rajada do destino", () => {
   // #5 em 11/09/2026: 15 posts a cada 10 min = 6 liberacoes/hora x 15 = 90/hora.
   const { porRajada, porDia } = burstCapacity([{ active: true, minMinutesBetweenPosts: 10, burstSize: 15 }]);
   assert.equal(porRajada, 90, "6 liberacoes por hora x 15 posts");
-  assert.equal(porDia, 2160, "90 por rajada x 24 rajadas");
+  assert.equal(porDia, 1530, "90 por rajada x 17 rajadas");
 });

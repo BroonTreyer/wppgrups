@@ -36,6 +36,23 @@ export class ZApiClient {
     return this.request(`/group-metadata/${encodeURIComponent(groupId)}`, { method: "GET" });
   }
 
+  sendText({ destinationId, message }) {
+    return this.request("/send-text", { method: "POST", body: JSON.stringify({ phone: destinationId, message }) });
+  }
+
+  // `pollMaxOptions` e quantas opcoes a pessoa pode marcar. Igual ao numero de
+  // opcoes = marcar quantas quiser.
+  sendPoll({ destinationId, question, options, maxOptions = 1 }) {
+    return this.request("/send-poll", {
+      method: "POST",
+      body: JSON.stringify({ phone: destinationId, message: question, poll: options.map((name) => ({ name })), pollMaxOptions: maxOptions })
+    });
+  }
+
+  updateGroupDescription({ groupId, description }) {
+    return this.request("/update-group-description", { method: "POST", body: JSON.stringify({ groupId, groupDescription: description }) });
+  }
+
   getChannels() {
     return this.request("/newsletter", { method: "GET" });
   }

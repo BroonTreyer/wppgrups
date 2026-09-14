@@ -13,6 +13,7 @@ import { RetentionService } from "./services/retention-service.js";
 import { OperationService } from "./services/operation-service.js";
 import { MercadoLivreSource } from "./sources/mercado-livre.js";
 import { MemberTracker } from "./services/member-tracker.js";
+import { DailyClosingService } from "./services/daily-closing.js";
 import { MetaConversionsClient } from "./infra/meta-capi.js";
 import { startScheduler } from "./services/scheduler.js";
 import { createApp } from "./http/server.js";
@@ -35,8 +36,9 @@ const retentionService = new RetentionService({ store, config });
 const operationService = new OperationService({ store, config });
 await operationService.restoreWindow();
 const memberTracker = new MemberTracker({ store, zapi, capi: new MetaConversionsClient(config.meta), config });
-const stopScheduler = startScheduler({ queueService, ingestionService, retentionService, operationService, affiliateLinkService, memberTracker, config });
-const server = createApp({ config, destinationService, publicationService, queueService, productLinkService, ingestionService, affiliateLinkService, operationService, memberTracker });
+const dailyClosing = new DailyClosingService({ store, zapi, operationService, config });
+const stopScheduler = startScheduler({ queueService, ingestionService, retentionService, operationService, affiliateLinkService, memberTracker, dailyClosing, config });
+const server = createApp({ config, destinationService, publicationService, queueService, productLinkService, ingestionService, affiliateLinkService, operationService, memberTracker, dailyClosing });
 
 server.listen(config.port, config.host, () => console.log(`OfertaFlow ativo em ${config.appBaseUrl} (${config.host}:${config.port}, dry-run: ${config.dryRun})`));
 for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => {

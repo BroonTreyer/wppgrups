@@ -103,6 +103,14 @@ export function loadConfig(env = process.env) {
       webhookSecret: env.ZAPI_WEBHOOK_SECRET ?? "development-webhook-secret",
       channelImageEnabled: bool(env.ZAPI_CHANNEL_IMAGE_ENABLED, false)
     },
+    // Mensagem de "vitrine fechada" + enquete quando a janela fecha
+    // (src/services/daily-closing.js). Sem grupos listados nada e enviado.
+    dailyClosing: {
+      groups: (env.DAILY_CLOSING_GROUPS ?? "").split(",").map((item) => item.trim()).filter(Boolean),
+      // Quanto tempo depois do fechamento ainda vale mandar — cobre um reinicio
+      // do bot perto das 22h sem mandar "fechamos por hoje" as 23h40.
+      graceMinutes: int(env.DAILY_CLOSING_GRACE_MINUTES, 45)
+    },
     // Medicao de membro REAL para os anuncios (src/services/member-tracker.js).
     // Sem grupos listados nada roda. Sem token as entradas sao medidas e ficam
     // pendentes — o Meta aceita ate 7 dias de atraso.

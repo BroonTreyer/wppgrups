@@ -24,27 +24,28 @@
 
 const FUSO = "America/Sao_Paulo";
 
-// As 24 horas do dia sao janela: operacao full time, por decisao do dono do
-// canal em 11/09/2026, junto com a subida para 600 posts por destino.
+// Das 5h as 22h (17 janelas, a ultima e a das 21h), por decisao do dono do canal
+// em 14/09/2026. As 22h o grupo recebe o fechamento do dia (mensagem + enquete,
+// src/services/daily-closing.js) e so volta as 5h.
 //
-// A historia deste numero, porque ele so anda para cima e vale saber o que foi
-// trocado: eram 12 janelas alternadas (um canal, 60 posts/dia), viraram 16
-// coladas, depois 18 comecando as 5h, agora 24.
+// A historia deste numero: eram 12 janelas alternadas (um canal, 60 posts/dia),
+// viraram 16 coladas, depois 18 comecando as 5h, depois 24 (full time, 11/09) e
+// agora voltaram a fechar a noite.
 //
-// O QUE SE PERDE: o silencio da madrugada existia por um motivo. Mensagem de
-// oferta as 3h chega com notificacao no telefone de quem dorme, e o custo disso
-// nao aparece em nenhuma metrica do sistema — aparece na saida do grupo. Nada no
-// codigo consegue medir isso; quem decide e quem conhece a audiencia.
+// Por que fechou: em 13/09 o grupo #5 mandou 1.563 mensagens, 139 por hora entre
+// 0h e 2h — notificacao no telefone de quem dorme, enquanto anuncios pagos traziam
+// gente nova para dentro. O custo disso nao aparece em metrica nenhuma do sistema;
+// aparece na saida do grupo.
 //
-// Cuidado ao mexer: a janela do agendador (PUBLISHING_START_HOUR/END_HOUR) e um
-// segundo portao, e se ela for mais estreita que estas janelas as rajadas de fora
-// morrem sem nenhuma mensagem de erro — e o que `burstsOutsideWindow` denuncia na
-// partida. Com 24 janelas ela precisa ser 0h-24h.
+// Cuidado ao mexer: a janela do agendador (PUBLISHING_START_HOUR/END_HOUR, e a
+// janela salva no store por /api/operation/window, que VENCE o .env) e um segundo
+// portao. Precisa bater com estas janelas: 5h-22h. E o texto do fechamento diz
+// "amanha as 5h" — mudou aqui, muda em src/domain/closing.js.
 //
 // Quem espaca as mensagens dentro da hora e o `minMinutesBetweenPosts` de cada
 // destino, que e por canal e portanto nao se acumula entre eles.
-export const BURST_WINDOWS = Array.from({ length: 24 }, (_, passo) => {
-  const hora = passo;
+export const BURST_WINDOWS = Array.from({ length: 17 }, (_, passo) => {
+  const hora = passo + 5;
   const periodo = hora < 12 ? "manha" : hora < 18 ? "tarde" : "noite";
   return { hora, rotulo: `${periodo}-${hora}h` };
 });
