@@ -242,6 +242,24 @@ async function processPending() {
  * clicava sem ter marcado o agendamento via o botao nao fazer absolutamente
  * nada — sem erro, sem log, sem pista.
  */
+// Uma rodada da colheita dura HORAS (110 lojas, varias paginas cada), e o service
+// worker do Chrome (Manifest V3) e encerrado depois de poucos minutos de trabalho.
+// Ate 14/09/2026 cada alarme recomecava a lista do zero e o worker morria na 3a
+// loja: em 6h, principia 24x e sensodyne 12x, as outras ~100 lojas quase nunca, e
+// o grupo secou com "produto repetido". Agora o progresso fica no storage: cada
+// despertar colhe um LOTE curto e o seguinte continua de onde parou.
+const LOTE_MS = 3 * 60 * 1000;
+const PAUSA_ENTRE_RODADAS_MS = 30 * 60 * 1000;
+// Trava contra dois lotes simultaneos. Trava mais velha que isto e de worker morto.
+const TRAVA_MS = 6 * 60 * 1000;
+// Em 14/09/2026 o Mercado Livre passou a responder a listagem das lojas com uma
+// parede de verificacao ("Por seguranca, complete esta etapa", /captcha/wall) —
+// a colheita lia 0 produtos e o grupo secou. Nao se contorna captcha: a colheita
+// PARA, guarda onde estava, avisa, e espera o dono resolver pelo VNC. E vai mais
+// devagar entre paginas para nao provocar a parede de novo.
+const PAUSA_ENTRE_PAGINAS_MS = 20 * 1000;
+const ESPERA_APOS_CAPTCHA_MS = 30 * 60 * 1000;
+
 async function harvestPages({ forcado = false } = {}) {
   const config = await settings();
   if (!forcado && !config.harvestEnabled) { console.log("[colheita] agendamento desligado"); return; }
@@ -258,21 +276,41 @@ async function harvestPages({ forcado = false } = {}) {
     await chrome.storage.local.set({ status: { ...state } });
     return;
   }
-  console.log(`[colheita] comecando: ${configuradas.length} pagina(s)`);
 
   // Quantas paginas por marca. A fila e alimentada em profundidade: a pagina
   // seguinte so entra quando a atual termina, e o endereco dela vem do proprio
   // Mercado Livre (ver `proximaPagina` em harvest.js) — montar `_Desde_51` na
   // mao devolvia a MESMA pagina, com estatisticas identicas.
   const porMarca = Math.max(1, Math.min(Number(config.harvestPages) || 10, 40));
-  const fila = configuradas.map((url) => ({ url, pagina: 1 }));
+  const agora = Date.now();
+  const assinatura = configuradas.join("\n");
+  let { harvestCursor: cursor } = await chrome.storage.local.get("harvestCursor");
+  if (cursor?.travadoEm && agora - cursor.travadoEm < TRAVA_MS) return;
+  // Depois de um captcha, o alarme nao insiste: insistir e o que prende a conta na
+  // parede. "Colher agora" (forcado) libera na hora, depois que o dono resolveu.
+  if (!forcado && cursor?.bloqueadoEm && agora - cursor.bloqueadoEm < ESPERA_APOS_CAPTCHA_MS) return;
+
+  const novaRodada = () => ({ assinatura, fila: configuradas.map((url) => ({ url, pagina: 1 })), visitados: [], iniciadaEm: agora, terminouEm: null });
+  if (!cursor || cursor.assinatura !== assinatura) {
+    cursor = novaRodada();
+  } else if (!cursor.fila.length) {
+    // Rodada completa: espera a pausa, a nao ser que o dono tenha pedido agora.
+    if (!forcado && agora - (cursor.terminouEm ?? 0) < PAUSA_ENTRE_RODADAS_MS) return;
+    cursor = novaRodada();
+  }
+  if (cursor.iniciadaEm === agora) console.log(`[colheita] nova rodada: ${cursor.fila.length} pagina(s)`);
+  cursor.travadoEm = agora;
+  await chrome.storage.local.set({ harvestCursor: cursor });
+
   // Endereco ja colhido nesta rodada nao se colhe de novo. Sem isto, um botao
   // "Seguinte" que aponta para a propria pagina faz a colheita repetir a mesma
   // lista ate bater o limite — foi o que aconteceu com avon e eudora, tres
   // passagens identicas em 11/09/2026.
-  const visitados = new Set();
+  const visitados = new Set(cursor.visitados);
+  const fila = cursor.fila;
+  const ate = agora + LOTE_MS;
 
-  while (fila.length) {
+  while (fila.length && Date.now() < ate) {
     const { url, pagina } = fila.shift();
     const chave = url.split("#")[0];
     if (visitados.has(chave)) {
@@ -289,6 +327,17 @@ async function harvestPages({ forcado = false } = {}) {
       if (!tab) tab = await chrome.tabs.create({ url, active: false });
       tab = await waitForLoad(tab.id, 40000);
       if (!tab) continue;
+      if (/\/captcha\//.test(tab.url || "")) {
+        // Devolve a pagina para a frente da fila: quando liberar, recomeca AQUI.
+        fila.unshift({ url, pagina });
+        visitados.delete(chave);
+        cursor.bloqueadoEm = Date.now();
+        state.lastError = "Mercado Livre pediu verificacao de seguranca (captcha) na colheita: resolva no Chrome do servidor (VNC) e clique em Colher agora";
+        console.log("[colheita] captcha do Mercado Livre — rodada pausada ate o dono resolver");
+        reportarSaude();
+        break;
+      }
+      cursor.bloqueadoEm = null;
 
       // O coletor nao esta no manifesto: e injetado so quando ha colheita, para
       // nao rodar em toda navegacao do dono no Mercado Livre.
@@ -316,16 +365,33 @@ async function harvestPages({ forcado = false } = {}) {
       state.lastError = `colheita em ${url}: ${error.message}`;
     } finally {
       if (tab && !jaEstavaAberta) await chrome.tabs.remove(tab.id).catch(() => {});
-      await chrome.storage.local.set({ status: { ...state } });
+      // Salva o progresso a CADA pagina: se o worker morrer agora, o proximo
+      // despertar comeca na pagina seguinte, nao no inicio da lista.
+      cursor.visitados = [...visitados];
+      cursor.travadoEm = Date.now();
+      await chrome.storage.local.set({ status: { ...state }, harvestCursor: cursor });
     }
+    if (cursor.bloqueadoEm) break;
+    if (fila.length && Date.now() < ate) await sleep(PAUSA_ENTRE_PAGINAS_MS);
   }
+
+  if (!fila.length) {
+    cursor.terminouEm = Date.now();
+    console.log(`[colheita] rodada completa: ${cursor.visitados.length} pagina(s) em ${Math.round((cursor.terminouEm - cursor.iniciadaEm) / 60000)} min`);
+  } else {
+    console.log(`[colheita] lote encerrado, ${fila.length} pagina(s) para o proximo despertar`);
+  }
+  cursor.travadoEm = null;
+  await chrome.storage.local.set({ harvestCursor: cursor, status: { ...state } });
 }
 
 const agendar = () => {
   chrome.alarms.create("ofertaflow", { periodInMinutes: 0.5 });
-  // A colheita e cara (abre aba, rola a pagina inteira) e a vitrine de uma marca
-  // nao muda de minuto em minuto: de 30 em 30 minutos e o suficiente.
-  chrome.alarms.create("ofertaflow-harvest", { periodInMinutes: 30 });
+  // Desperta a cada minuto para continuar a rodada em LOTES (ver harvestPages).
+  // A pausa de 30 min entre rodadas completas agora fica no cursor, nao no alarme:
+  // com o alarme a 30 min e o worker morrendo em minutos, a lista nunca passava
+  // da 3a loja.
+  chrome.alarms.create("ofertaflow-harvest", { periodInMinutes: 1 });
 };
 chrome.runtime.onInstalled.addListener(agendar);
 chrome.runtime.onStartup.addListener(agendar);
