@@ -27,13 +27,21 @@ function setup({ chats = [], dryRun = false, maxPerTick = 10, send } = {}) {
   return { responder, zapi, store, enviados, clock };
 }
 
-test("a foto inicial nunca responde conversa antiga, nem com mensagem nao lida", async () => {
-  const { responder, zapi, enviados } = setup({ chats: [pessoa("5562911110001", { messagesUnread: "3", lastMessageTime: depois(1) })] });
+test("a foto inicial nunca responde conversa antiga, mesmo com mensagem nova depois", async () => {
+  const { responder, zapi, enviados } = setup({ chats: [pessoa("5562911110001", { lastMessageTime: depois(1) })] });
   const foto = await responder.tick();
   assert.equal(foto.baseline, 1);
-  zapi.lista = [pessoa("5562911110001", { messagesUnread: "5", lastMessageTime: depois(10) })];
+  zapi.lista = [pessoa("5562911110001", { lastMessageTime: depois(10) })];
   await responder.tick();
   assert.equal(enviados.length, 0, "quem ja conversava com o admin nao recebe o link");
+});
+
+test("nao depende de 'nao lidas': a Z-API desta instancia devolve sempre 0", async () => {
+  const { responder, zapi, enviados } = setup();
+  await responder.tick();
+  zapi.lista = [pessoa("5521999990009", { messagesUnread: "0", unread: "0", lastMessageTime: depois(1) })];
+  await responder.tick();
+  assert.equal(enviados.length, 1);
 });
 
 test("a foto pega a lista inteira mesmo com a paginacao da Z-API repetindo conversas", async () => {
@@ -83,13 +91,13 @@ test("esquecer um contato da foto faz a proxima mensagem dele receber o link", a
 
   const r = await responder.forget({ phone: "+55 (62) 91111-0001" });
   assert.equal(r.forgotten, true);
-  // Mensagem antiga (anterior ao esquecimento), ja lida: nao dispara e NAO desfaz o esquecimento.
-  zapi.lista = [pessoa("5562911110001", { messagesUnread: "0", lastMessageTime: depois(3) })];
+  // Mensagem anterior ao esquecimento: nao dispara e NAO desfaz o esquecimento.
+  zapi.lista = [pessoa("5562911110001", { lastMessageTime: depois(-1) })];
   await responder.tick();
   await responder.tick();
   assert.equal(enviados.length, 0);
 
-  zapi.lista = [pessoa("5562911110001", { messagesUnread: "1", lastMessageTime: depois(10) })];
+  zapi.lista = [pessoa("5562911110001", { lastMessageTime: depois(10) })];
   await responder.tick();
   assert.equal(enviados.length, 1, "a primeira mensagem nova depois do esquecimento recebe o link");
   await responder.tick();
@@ -97,14 +105,16 @@ test("esquecer um contato da foto faz a proxima mensagem dele receber o link", a
   await assert.rejects(() => responder.forget({ phoneHash: "curto" }), /valido/);
 });
 
-test("grupo, canal e conversa aberta pelo admin nao recebem nada", async () => {
+test("grupo, canal e conversa antiga fora da foto nao recebem nada", async () => {
   const { responder, zapi, enviados } = setup();
   await responder.tick();
   zapi.lista = [
-    { phone: "120363431078469154-group", isGroup: true, messagesUnread: "9", lastMessageTime: depois(1) },
-    { phone: "120363400000000000@newsletter", isGroup: false, messagesUnread: "2", lastMessageTime: depois(1) },
-    pessoa("5521999990007", { messagesUnread: "0", lastMessageTime: depois(1) })
+    { phone: "120363431078469154-group", isGroup: true, lastMessageTime: depois(1) },
+    { phone: "120363400000000000@newsletter", isGroup: false, lastMessageTime: depois(1) },
+    pessoa("5521999990007", { lastMessageTime: antes })
   ];
+  await responder.tick();
+  zapi.lista = [pessoa("5521999990007", { lastMessageTime: antes })];
   await responder.tick();
   assert.equal(enviados.length, 0);
 });

@@ -57,16 +57,17 @@ export class WelcomeResponder {
       const hash = sha256(String(chat.phone));
       if (conhecidos.has(hash)) continue;
 
-      const escreveu = Number(chat.messagesUnread) > 0 || String(chat.unread) === "true";
-      // Contato esquecido para teste: so a mensagem que chegar DEPOIS do esquecimento
-      // conta. Sem isto a conversa antiga (ja lida) o marcava de volta como visto no
-      // ciclo seguinte e o esquecimento se desfazia sozinho em 10 segundos.
-      if (emTeste[hash]) {
-        if (!escreveu || Number(chat.lastMessageTime) <= Date.parse(emTeste[hash])) continue;
-      }
-      const chegouDepois = Number(chat.lastMessageTime) >= inicio;
-      if (!chegouDepois || !escreveu) {
-        // Conversa antiga que estava fora da foto, ou aberta pelo proprio admin: nunca responder.
+      // NAO usar `messagesUnread`/`unread`: nesta instancia a Z-API devolve 0 em TODAS
+      // as conversas (medido em 14/09/2026: 438 de 438), e o criterio antigo nunca
+      // disparou nem para o teste do dono. Sem campo de direcao disponivel, o sinal e
+      // "conversa com pessoa fora da foto que teve mensagem depois dela". Custo
+      // aceito: se o admin puxar conversa com um numero totalmente novo, esse numero
+      // recebe o link do grupo.
+      // Contato esquecido para teste: so mensagem DEPOIS do esquecimento conta, e a
+      // conversa antiga nao o marca de volta como visto.
+      if (emTeste[hash] && Number(chat.lastMessageTime) <= Date.parse(emTeste[hash])) continue;
+      if (Number(chat.lastMessageTime) < inicio) {
+        // Conversa antiga que ficou fora da foto: nunca responder.
         vistos.push(hash);
         continue;
       }
