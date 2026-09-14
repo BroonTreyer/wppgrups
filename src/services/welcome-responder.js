@@ -98,19 +98,37 @@ export class WelcomeResponder {
   }
 
   // Foto inicial: toda conversa com pessoa que ja existe fica marcada como vista.
+  //
+  // UMA chamada grande, nao paginas: a paginacao da Z-API REPETE conversas entre
+  // paginas. Medido em 14/09/2026: 5 paginas de 100 trouxeram 430 itens e so 273
+  // pessoas distintas; `pageSize=1000` numa chamada trouxe as 427. A foto paginada
+  // deixava 154 contatos antigos do admin de fora — e cada um receberia o link do
+  // grupo na proxima mensagem que mandasse.
   async baseline() {
-    const hashes = [];
-    for (let page = 1; page <= 100; page += 1) {
-      const chats = await this.zapi.getChats({ page, pageSize: 100 });
+    const tamanho = 5000;
+    const hashes = new Set();
+    for (let page = 1; page <= 20; page += 1) {
+      const chats = await this.zapi.getChats({ page, pageSize: tamanho });
       if (!Array.isArray(chats)) throw new Error("Z-API /chats nao devolveu uma lista na foto inicial");
-      for (const chat of chats) if (ehPessoa(chat)) hashes.push(sha256(String(chat.phone)));
-      if (chats.length < 100) break;
+      const antes = hashes.size;
+      for (const chat of chats) if (ehPessoa(chat)) hashes.add(sha256(String(chat.phone)));
+      // Pagina que nao acrescenta ninguem e repeticao, nao continuacao.
+      if (chats.length < tamanho || hashes.size === antes) break;
     }
     const agora = this.clock().toISOString();
     await this.store.update((state) => {
-      state.welcome = { baselineAt: agora, known: [...new Set(hashes)], attempts: {}, replies: [] };
+      const anterior = state.welcome ?? {};
+      state.welcome = { baselineAt: agora, known: [...hashes], attempts: {}, replies: anterior.replies ?? [] };
     });
-    return { baseline: hashes.length };
+    return { baseline: hashes.size };
+  }
+
+  // Refaz a foto sem parar o bot. So para correcao; em operacao normal a foto e unica.
+  async rebaseline() {
+    await this.store.update((state) => {
+      state.welcome = { ...(state.welcome ?? {}), baselineAt: null };
+    });
+    return this.baseline();
   }
 
   async status() {

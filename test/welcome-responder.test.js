@@ -36,6 +36,32 @@ test("a foto inicial nunca responde conversa antiga, nem com mensagem nao lida",
   assert.equal(enviados.length, 0, "quem ja conversava com o admin nao recebe o link");
 });
 
+test("a foto pega a lista inteira mesmo com a paginacao da Z-API repetindo conversas", async () => {
+  const store = new MemoryStore();
+  const todas = Array.from({ length: 230 }, (_, i) => pessoa(`55629${String(i).padStart(8, "0")}`));
+  const enviados = [];
+  const zapi = {
+    lista: [],
+    // Imita a Z-API real: com pagina pequena, cada pagina repete parte da anterior;
+    // com pageSize grande, vem tudo de uma vez.
+    async getChats({ page, pageSize }) {
+      if (this.lista.length) return page === 1 ? this.lista : [];
+      if (pageSize >= todas.length) return page === 1 ? todas : todas;
+      return todas.slice(Math.max(0, (page - 1) * pageSize - 40), (page - 1) * pageSize - 40 + pageSize);
+    },
+    async sendText(payload) { enviados.push(payload); }
+  };
+  const config = { welcome: { enabled: true, dryRun: false, scanSize: 50, maxPerTick: 10, message: "https://chat.whatsapp.com/ABC" } };
+  const responder = new WelcomeResponder({ store, zapi, config, clock: () => new Date(INICIO), pause: async () => {} });
+  const foto = await responder.tick();
+  assert.equal(foto.baseline, 230, "nenhum contato antigo fica de fora");
+
+  // O contato mais antigo da lista escreve depois da foto: nao pode receber o link.
+  zapi.lista = [{ ...todas[229], messagesUnread: "1", lastMessageTime: depois(5) }];
+  await responder.tick();
+  assert.equal(enviados.length, 0);
+});
+
 test("pessoa nova que escreveu recebe o link uma vez so", async () => {
   const { responder, zapi, enviados, store } = setup();
   await responder.tick();

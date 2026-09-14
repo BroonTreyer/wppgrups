@@ -74,6 +74,7 @@ export function createApp({ config, destinationService, publicationService, queu
       if (request.method === "POST" && url.pathname === "/api/affiliate/retry") return send(response, 200, await affiliateLinkService.retryFailed());
       if (request.method === "GET" && url.pathname === "/api/affiliate/status") return send(response, 200, await affiliateLinkService.status());
       if (request.method === "GET" && url.pathname === "/api/welcome") return send(response, 200, await welcomeResponder.status());
+      if (request.method === "POST" && url.pathname === "/api/welcome/rebaseline") return send(response, 200, await welcomeResponder.rebaseline());
       if (request.method === "GET" && url.pathname === "/api/closing") return send(response, 200, await dailyClosing.status());
       if (request.method === "GET" && url.pathname === "/api/members") return send(response, 200, await memberTracker.status());
       if (request.method === "POST" && url.pathname === "/api/members/sync") return send(response, 200, await memberTracker.tick());
