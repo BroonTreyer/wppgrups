@@ -62,6 +62,29 @@ test("sair e voltar nao conta de novo", async () => {
   assert.equal(sent.length, 1);
 });
 
+test("retencao: marca quem entrou e saiu, e desmarca quem voltou", async () => {
+  const { tracker, zapi, store } = setup();
+  const base = ["5562911110001", "5562911110002", "5562911110003", "5562911110004"];
+  await tracker.tick();
+  zapi.current = people(...base, "5521999990005", "5521999990006");
+  await tracker.tick();
+  zapi.current = people(...base, "5521999990006");
+  await tracker.tick();
+
+  let status = await tracker.status();
+  assert.equal(status.joins.total, 2);
+  assert.equal(status.joins.stillIn, 1);
+  assert.equal(status.joins.left, 1);
+  const saiu = store.state.memberTracking.joins.find((join) => join.phoneHash === sha("5521999990005"));
+  assert.ok(saiu.leftAt);
+
+  zapi.current = people(...base, "5521999990005", "5521999990006");
+  await tracker.tick();
+  status = await tracker.status();
+  assert.equal(status.joins.stillIn, 2, "voltou, conta como presente");
+  assert.equal(status.joins.total, 2, "e nao vira entrada nova");
+});
+
 test("leitura que encolhe o grupo de repente e ignorada, senao a seguinte viraria leva falsa de entradas", async () => {
   const { tracker, zapi, sent, store } = setup();
   await tracker.tick();

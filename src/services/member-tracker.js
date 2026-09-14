@@ -78,6 +78,17 @@ export class MemberTracker {
         });
       }
       const left = group.members.filter((hash) => !current.has(hash)).length;
+      // Retencao: quem veio depois da foto inicial e saiu. Custo por ENTRADA engana
+      // quando o grupo espanta — o numero que paga a conta e custo por membro que FICA.
+      for (const join of tracking.joins) {
+        if (join.groupId !== groupId) continue;
+        const presente = current.has(join.phoneHash);
+        if (!presente && !join.leftAt) join.leftAt = now;
+        if (presente && join.leftAt) {
+          join.rejoinedAt = now;
+          delete join.leftAt;
+        }
+      }
       group.members = [...current.keys()];
       group.name = metadata.subject ?? group.name;
       group.lastSyncAt = now;
@@ -143,8 +154,10 @@ export class MemberTracker {
     const joins = tracking.joins ?? [];
     const byDay = {};
     for (const join of joins) {
-      const day = join.joinedAt.slice(0, 10);
-      byDay[day] = (byDay[day] ?? 0) + 1;
+      const day = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date(join.joinedAt));
+      byDay[day] ??= { joined: 0, stillIn: 0 };
+      byDay[day].joined += 1;
+      if (!join.leftAt) byDay[day].stillIn += 1;
     }
     const count = (status) => joins.filter((join) => join.status === status).length;
     return {
@@ -154,7 +167,7 @@ export class MemberTracker {
       groups: Object.fromEntries(Object.entries(tracking.groups ?? {}).map(([id, group]) => [id, {
         name: group.name, members: group.members.length, baselineAt: group.baselineAt, lastSyncAt: group.lastSyncAt, lastSuspiciousAt: group.lastSuspiciousAt ?? null
       }])),
-      joins: { total: joins.length, sent: count("sent"), pending: count("pending"), failed: count("failed"), expired: count("expired"), byDay },
+      joins: { total: joins.length, stillIn: joins.filter((join) => !join.leftAt).length, left: joins.filter((join) => join.leftAt).length, sent: count("sent"), pending: count("pending"), failed: count("failed"), expired: count("expired"), byDay },
       lastError: joins.findLast((join) => join.lastError)?.lastError ?? null
     };
   }
