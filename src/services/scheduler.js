@@ -1,4 +1,4 @@
-export function startScheduler({ queueService, ingestionService, retentionService, operationService, affiliateLinkService, memberTracker, dailyClosing, config, logger = console }) {
+export function startScheduler({ queueService, ingestionService, retentionService, operationService, affiliateLinkService, memberTracker, dailyClosing, welcomeResponder, config, logger = console }) {
   const timers = [];
   const every = (seconds, task) => {
     const timer = setInterval(task, seconds * 1000);
@@ -45,6 +45,24 @@ export function startScheduler({ queueService, ingestionService, retentionServic
       if (Object.values(pruned).some(Boolean)) logger.log("Limpeza do historico:", JSON.stringify(pruned));
     } catch (error) {
       logger.error("Falha na limpeza do historico:", error.message);
+    }
+  });
+
+  // Fora do `paused()` e da janela de publicacao: o anuncio traz gente a qualquer
+  // hora, e quem pediu o link as 23h nao pode esperar ate as 5h.
+  let respondendo = false;
+  if (welcomeResponder && config.welcome?.enabled) every(config.welcome.pollSeconds, async () => {
+    if (respondendo) return;
+    respondendo = true;
+    try {
+      const result = await welcomeResponder.tick();
+      if (result.baseline !== undefined) logger.log(`Boas-vindas: foto inicial com ${result.baseline} conversas (nenhuma sera respondida)`);
+      if (result.replied) logger.log(`Boas-vindas: ${result.replied} link(s) do grupo ${result.dryRun ? "que SERIAM enviados (ensaio)" : "enviados"}`);
+      if (result.failed) logger.error(`Boas-vindas: ${result.failed} envio(s) falharam`);
+    } catch (error) {
+      logger.error("Falha nas boas-vindas:", error.message);
+    } finally {
+      respondendo = false;
     }
   });
 

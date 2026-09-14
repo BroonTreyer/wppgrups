@@ -103,6 +103,25 @@ export function loadConfig(env = process.env) {
       webhookSecret: env.ZAPI_WEBHOOK_SECRET ?? "development-webhook-secret",
       channelImageEnabled: bool(env.ZAPI_CHANNEL_IMAGE_ENABLED, false)
     },
+    // Resposta automatica com o link do grupo para quem chega pelo anuncio de
+    // clique para WhatsApp (src/services/welcome-responder.js). Nasce em ensaio:
+    // registra quem receberia, sem enviar, ate WELCOME_REPLY_DRY_RUN=false.
+    welcome: {
+      enabled: bool(env.WELCOME_REPLY_ENABLED, false),
+      dryRun: bool(env.WELCOME_REPLY_DRY_RUN, true),
+      pollSeconds: int(env.WELCOME_REPLY_POLL_SECONDS, 10),
+      scanSize: int(env.WELCOME_REPLY_SCAN_SIZE, 50),
+      maxPerTick: int(env.WELCOME_REPLY_MAX_PER_TICK, 10),
+      message: env.WELCOME_REPLY_MESSAGE ?? [
+        "Oi! 💄 Que bom que você veio!",
+        "",
+        "Toque no link abaixo para entrar no grupo *Achadinhos da Isa*, com ofertas de beleza do Mercado Livre todos os dias:",
+        "",
+        `https://chat.whatsapp.com/${env.WELCOME_INVITE_CODE ?? "Cahbkfye2jg42cXIirHFeG"}`,
+        "",
+        "É só tocar no link e depois em *Entrar no grupo* 😉"
+      ].join("\n")
+    },
     // Mensagem de "vitrine fechada" + enquete quando a janela fecha
     // (src/services/daily-closing.js). Sem grupos listados nada e enviado.
     dailyClosing: {
@@ -159,6 +178,10 @@ export function assertSafeConfig(config) {
   // pelo mesmo numero de titulos, e a saida (que domina o custo) nao muda.
   if (config.ai.batchSize < 1 || config.ai.batchSize > 100) throw new Error("AI_CLASSIFIER_BATCH_SIZE deve estar entre 1 e 100");
   if (config.ai.concurrency < 1 || config.ai.concurrency > 20) throw new Error("AI_CLASSIFIER_CONCURRENCY deve estar entre 1 e 20");
+  if (config.welcome.pollSeconds < 5) throw new Error("WELCOME_REPLY_POLL_SECONDS deve ser pelo menos 5");
+  if (config.welcome.enabled && !/chat\.whatsapp\.com\/[A-Za-z0-9]+/.test(config.welcome.message)) {
+    throw new Error("WELCOME_REPLY_MESSAGE precisa conter o link chat.whatsapp.com do grupo");
+  }
   if (config.meta.pollMinutes < 1) throw new Error("MEMBER_TRACKING_POLL_MINUTES deve ser pelo menos 1");
   if (config.meta.accessToken && !config.meta.pixelId) throw new Error("Defina META_PIXEL_ID junto com META_CAPI_TOKEN");
   if (!["low", "medium", "high", "xhigh", "max"].includes(config.ai.effort)) throw new Error("AI_CLASSIFIER_EFFORT deve ser low, medium, high, xhigh ou max");

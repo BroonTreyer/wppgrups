@@ -36,6 +36,13 @@ export class ZApiClient {
     return this.request(`/group-metadata/${encodeURIComponent(groupId)}`, { method: "GET" });
   }
 
+  // Lista de conversas, da mais recente para a mais antiga. Nesta instancia
+  // (multi-device) e o unico jeito de ver quem escreveu: /chat-messages responde
+  // "Does not work in multi device version" e o webhook de recebidas pertence ao Make.
+  getChats({ page = 1, pageSize = 50 } = {}) {
+    return this.request(`/chats?page=${page}&pageSize=${pageSize}`, { method: "GET" });
+  }
+
   sendText({ destinationId, message }) {
     return this.request("/send-text", { method: "POST", body: JSON.stringify({ phone: destinationId, message }) });
   }
