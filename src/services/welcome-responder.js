@@ -123,6 +123,21 @@ export class WelcomeResponder {
     return { baseline: hashes.size };
   }
 
+  // Faz o bot tratar um contato como novo de novo — para testar o fluxo com um
+  // numero que ja conversava com o admin (o teste de 14/09/2026 usou um numero da
+  // foto inicial e, corretamente, nao recebeu nada). Aceita telefone ou hash.
+  async forget({ phone, phoneHash } = {}) {
+    const hash = phoneHash ?? (phone ? sha256(String(phone).replace(/\D/g, "")) : null);
+    if (!hash || !/^[a-f0-9]{64}$/.test(hash)) throw new Error("Informe phone ou phoneHash valido");
+    return this.store.update((state) => {
+      const w = (state.welcome ??= {});
+      const antes = (w.known ?? []).length;
+      w.known = (w.known ?? []).filter((item) => item !== hash);
+      if (w.attempts) delete w.attempts[hash];
+      return { forgotten: antes !== w.known.length };
+    });
+  }
+
   // Refaz a foto sem parar o bot. So para correcao; em operacao normal a foto e unica.
   async rebaseline() {
     await this.store.update((state) => {

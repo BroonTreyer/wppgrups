@@ -74,6 +74,20 @@ test("pessoa nova que escreveu recebe o link uma vez so", async () => {
   assert.doesNotMatch(JSON.stringify(store.state), /5521999990005/, "o store nao guarda telefone");
 });
 
+test("esquecer um contato da foto faz a proxima mensagem dele receber o link", async () => {
+  const { responder, zapi, enviados } = setup({ chats: [pessoa("5562911110001")] });
+  await responder.tick();
+  zapi.lista = [pessoa("5562911110001", { messagesUnread: "1", lastMessageTime: depois(3) })];
+  await responder.tick();
+  assert.equal(enviados.length, 0, "contato da foto e ignorado");
+
+  const r = await responder.forget({ phone: "+55 (62) 91111-0001" });
+  assert.equal(r.forgotten, true);
+  await responder.tick();
+  assert.equal(enviados.length, 1);
+  await assert.rejects(() => responder.forget({ phoneHash: "curto" }), /valido/);
+});
+
 test("grupo, canal e conversa aberta pelo admin nao recebem nada", async () => {
   const { responder, zapi, enviados } = setup();
   await responder.tick();
