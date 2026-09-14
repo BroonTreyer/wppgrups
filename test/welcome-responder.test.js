@@ -83,8 +83,17 @@ test("esquecer um contato da foto faz a proxima mensagem dele receber o link", a
 
   const r = await responder.forget({ phone: "+55 (62) 91111-0001" });
   assert.equal(r.forgotten, true);
+  // Mensagem antiga (anterior ao esquecimento), ja lida: nao dispara e NAO desfaz o esquecimento.
+  zapi.lista = [pessoa("5562911110001", { messagesUnread: "0", lastMessageTime: depois(3) })];
   await responder.tick();
-  assert.equal(enviados.length, 1);
+  await responder.tick();
+  assert.equal(enviados.length, 0);
+
+  zapi.lista = [pessoa("5562911110001", { messagesUnread: "1", lastMessageTime: depois(10) })];
+  await responder.tick();
+  assert.equal(enviados.length, 1, "a primeira mensagem nova depois do esquecimento recebe o link");
+  await responder.tick();
+  assert.equal(enviados.length, 1, "e so uma vez");
   await assert.rejects(() => responder.forget({ phoneHash: "curto" }), /valido/);
 });
 

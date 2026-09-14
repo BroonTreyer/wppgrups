@@ -45,6 +45,7 @@ export class WelcomeResponder {
 
     const conhecidos = new Set(welcome.known ?? []);
     const tentativas = welcome.attempts ?? {};
+    const emTeste = welcome.retest ?? {};
     const inicio = Date.parse(welcome.baselineAt);
     const vistos = [];
     const respostas = [];
@@ -56,8 +57,14 @@ export class WelcomeResponder {
       const hash = sha256(String(chat.phone));
       if (conhecidos.has(hash)) continue;
 
-      const chegouDepois = Number(chat.lastMessageTime) >= inicio;
       const escreveu = Number(chat.messagesUnread) > 0 || String(chat.unread) === "true";
+      // Contato esquecido para teste: so a mensagem que chegar DEPOIS do esquecimento
+      // conta. Sem isto a conversa antiga (ja lida) o marcava de volta como visto no
+      // ciclo seguinte e o esquecimento se desfazia sozinho em 10 segundos.
+      if (emTeste[hash]) {
+        if (!escreveu || Number(chat.lastMessageTime) <= Date.parse(emTeste[hash])) continue;
+      }
+      const chegouDepois = Number(chat.lastMessageTime) >= inicio;
       if (!chegouDepois || !escreveu) {
         // Conversa antiga que estava fora da foto, ou aberta pelo proprio admin: nunca responder.
         vistos.push(hash);
@@ -86,6 +93,7 @@ export class WelcomeResponder {
         w.known = [...new Set([...(w.known ?? []), ...vistos])];
         w.attempts = { ...(w.attempts ?? {}), ...falhas };
         for (const hash of vistos) delete w.attempts[hash];
+        if (w.retest) for (const hash of vistos) delete w.retest[hash];
         w.replies = [...(w.replies ?? []), ...respostas].slice(-MAX_REPLIES_KEPT);
         w.lastTickAt = this.clock().toISOString();
       });
@@ -134,7 +142,8 @@ export class WelcomeResponder {
       const antes = (w.known ?? []).length;
       w.known = (w.known ?? []).filter((item) => item !== hash);
       if (w.attempts) delete w.attempts[hash];
-      return { forgotten: antes !== w.known.length };
+      w.retest = { ...(w.retest ?? {}), [hash]: this.clock().toISOString() };
+      return { forgotten: antes !== w.known.length, waitingNewMessageAfter: w.retest[hash] };
     });
   }
 
