@@ -113,6 +113,25 @@ const naHora = (state, isoUtc, overrides = {}) => new PublicationService({
   clock: () => new Date(isoUtc)
 });
 
+test("destino que exige nicho confiavel barra palpite de palavra e aceita colheita, IA e categoria", () => {
+  const destino = destination("g5", ["beauty"], { requireTrustedNiche: true });
+  const estado = { destinations: [destino], publications: [], deliveryEvents: [], offers: [], queue: [] };
+  const service = build(estado);
+  const motivo = (offer) => service.permanentBlockReason({ destination: destino, offer: { ...OFFER, ...offer }, nicheIds: ["beauty", "general"] });
+
+  // O caso real de 14/09/2026: vitrine de outra categoria, nicho so pela regra.
+  assert.match(String(motivo({ title: "Coletor De Urina Portatil Para Carro", category: "Saude", nicheSource: "regra" })), /fonte confiavel/);
+  assert.match(String(motivo({ title: "Touca Rede De Cozinha", category: null })), /fonte confiavel/);
+
+  assert.equal(motivo({ nicheSource: "colheita" }), null, "colheita das lojas de beleza");
+  assert.equal(motivo({ sourceContext: { origem: "extensao" } }), null, "colheita antiga, anterior ao nicheSource");
+  assert.equal(motivo({ nicheSource: "ia" }), null, "decisao da IA (inclusive cache)");
+  assert.equal(motivo({ category: "Beleza e Cuidado Pessoal", nicheSource: "regra" }), null, "categoria do marketplace");
+
+  const semExigencia = destination("g4", ["beauty"]);
+  assert.equal(service.permanentBlockReason({ destination: semExigencia, offer: { ...OFFER, nicheSource: "regra" }, nicheIds: ["beauty"] }), null, "destino que nao pediu segue como antes");
+});
+
 test("a madrugada nao publica; as 5h volta", async () => {
   const estado = { destinations: [destination("g", ["electronics"])], publications: [], deliveryEvents: [], offers: [], queue: [] };
   // 06:00 UTC = 03:00 em Brasilia. Foi 24h de 11/09 a 14/09/2026; o dono do canal

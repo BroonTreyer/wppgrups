@@ -49,6 +49,24 @@ export const CATEGORY_NICHE = {
 };
 
 const normalize = (text) => String(text ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+/** O nicho que a CATEGORIA do marketplace declara, ou null. */
+export const categoryNiche = (offer) => CATEGORY_NICHE[normalize(offer?.category ?? "").trim()] ?? null;
+
+/**
+ * Se o nicho `nicheId` desta oferta tem fonte confiavel.
+ *
+ * Existe porque, com a IA sem cota (14/09/2026), a regra de palavras rotulou como
+ * beleza "Coletor De Urina Portatil Para Carro" e "Touca Rede De Cozinha". Sao
+ * confiaveis: a colheita das lojas (a fonte decide), a IA (inclusive o cache) e a
+ * categoria que o proprio marketplace declara. Palpite de palavra, nao.
+ * Itens da colheita anteriores ao `nicheSource` sao reconhecidos pela origem.
+ */
+export function nicheIsTrusted(offer, nicheId) {
+  if (offer?.nicheSource === "colheita" || offer?.nicheSource === "ia") return true;
+  if (offer?.sourceContext?.origem === "extensao" && nicheId === "beauty") return true;
+  return categoryNiche(offer) === nicheId;
+}
 const tokens = (text) => normalize(text).split(/[^a-z0-9]+/).filter(Boolean);
 const singular = (token) => token.endsWith("s") ? token.slice(0, -1) : token;
 

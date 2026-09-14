@@ -290,8 +290,9 @@ export class IngestionService {
    * filtros, pela mesma IA e pelas mesmas regras de destino da vitrine. A unica
    * diferenca e de onde veio — e quem manda continua sendo este servico.
    */
-  async harvest({ produtos = [], origem = "extensao", sourceId = "mercado-livre" } = {}) {
+  async harvest({ produtos = [], origem = "extensao", sourceId = "mercado-livre", nicheIds = ["beauty"] } = {}) {
     if (!Array.isArray(produtos) || !produtos.length) return { recebidos: 0, enqueued: 0, rejected: 0 };
+    const nichosDaColheita = Array.isArray(nicheIds) && nicheIds.length ? [...new Set(nicheIds.map(String))] : ["beauty"];
     const configuradas = await this.list();
     // A fonte da colheita e a mesma da vitrine: e dela que vem o marketplace, os
     // filtros de preco e desconto e o teto por rodada. Se ela nao existe, nao ha
@@ -319,7 +320,14 @@ export class IngestionService {
       officialStore: Boolean(item.officialStore),
       category: item.category ?? null,
       sourceId: settings.id,
-      sourceContext: { origem, url: item.pageUrl ?? null }
+      sourceContext: { origem, url: item.pageUrl ?? null },
+      // A colheita le as LOJAS DE BELEZA: o nicho vem da lista de lojas, nao do
+      // titulo. Sem IA e sem regra de palavras, por decisao do dono em 14/09/2026
+      // ("ele vai colher e vai jogar nos grupos porque sao ofertas de beleza").
+      // Com a IA sem cota, a regra de palavras classificava coletor de urina e
+      // touca de cozinha como beleza.
+      nicheIds: nichosDaColheita,
+      nicheSource: "colheita"
     }));
 
     for (const offer of await this.select(candidatos, { ...settings, maxPerRun: limite }, stats)) {
@@ -393,20 +401,25 @@ export class IngestionService {
   // (mainNiche aqui, enqueue na fila, blockReason na publicacao) ja recebe pronto;
   // sem classificador, nada muda e a regra decide como sempre.
   async classificar(candidates, stats) {
-    if (!this.classifier?.ativo || !candidates.length) return;
-    const decisoes = await this.classifier.classify(candidates);
+    // Nicho que veio da colheita ja esta decidido pela fonte: nao se paga IA por
+    // ele, e a regra de palavras nao tem o direito de trocar.
+    const aClassificar = candidates.filter((offer) => offer.nicheSource !== "colheita");
+    if (!this.classifier?.ativo || !aClassificar.length) return;
+    const decisoes = await this.classifier.classify(aClassificar);
     let porIa = 0;
-    for (const offer of candidates) {
+    for (const offer of aClassificar) {
       const decisao = decisoes.get(productKey(offer));
       if (!decisao) continue;
       offer.nicheIds = decisao.nicheIds;
+      // "cache" e decisao da IA guardada; so "regra" e palpite de palavra.
+      offer.nicheSource = decisao.por === "regra" ? "regra" : "ia";
       if (decisao.servePublico !== null && decisao.servePublico !== undefined) {
         offer.audience = { serve: decisao.servePublico, motivo: decisao.motivo, por: decisao.por };
       }
       if (decisao.por === "ia") porIa += 1;
     }
     stats.classifiedByAi = porIa;
-    stats.classifiedFromCache = candidates.length - porIa;
+    stats.classifiedFromCache = aClassificar.length - porIa;
   }
 
   async recentProducts() {

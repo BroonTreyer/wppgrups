@@ -334,6 +334,29 @@ test("a colheita da extensao passa pelos mesmos filtros da vitrine", async () =>
   assert.equal(enqueued[0].sellerName, "NATURA");
 });
 
+test("colheita das lojas de beleza entra como beleza, sem IA e sem regra de palavras", async () => {
+  const { service, enqueued, store, apply } = build({
+    offers: [],
+    settings: { enabled: true, minDiscount: 20, minSold: 0, minRating: 0, maxPrice: 1000 }
+  });
+  await apply();
+  store.state.destinations.push({ id: "g5", active: true, nicheIds: ["beauty"], maxDailyPosts: 100, minMinutesBetweenPosts: 5 });
+  // Classificador que falharia o teste se fosse chamado para item da colheita.
+  let pedidos = 0;
+  service.classifier = { ativo: true, async classify(itens) { pedidos += itens.length; return new Map(); } };
+
+  const r = await service.harvest({ produtos: [
+    // Titulo que a regra de palavras jogaria para casa/saude — mas veio de loja de beleza.
+    { externalId: "MLB333", title: "Kit Toalha Rosto Algodao Egipcio", currentPrice: 40, originalPrice: 100,
+      imageUrl: "https://cdn/z.jpg", productUrl: "https://www.mercadolivre.com.br/p/MLB333", officialStore: true, sellerName: "NATURA" }
+  ] });
+
+  assert.equal(r.enqueued, 1);
+  assert.equal(pedidos, 0, "a IA nao e chamada para a colheita");
+  assert.deepEqual(enqueued[0].nicheIds, ["beauty"]);
+  assert.equal(enqueued[0].nicheSource, "colheita");
+});
+
 test("colheita vazia nao faz nada e nao quebra", async () => {
   const { service, apply } = build({ offers: [], settings: { enabled: true } });
   await apply();

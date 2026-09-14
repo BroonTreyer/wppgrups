@@ -93,6 +93,10 @@ export class DestinationService {
       // Exigir loja oficial da marca. Serve a canal que se vende como curadoria
       // de marca ("so original"), ao preco de cortar ~70% da vitrine — por isso
       // e escolha por destino, nunca regra do sistema.
+      if (patch.requireTrustedNiche !== undefined) {
+        if (typeof patch.requireTrustedNiche !== "boolean") throw new Error("requireTrustedNiche deve ser booleano");
+        destination.requireTrustedNiche = patch.requireTrustedNiche;
+      }
       if (patch.requireOfficialStore !== undefined) {
         if (typeof patch.requireOfficialStore !== "boolean") throw new Error("requireOfficialStore deve ser booleano");
         destination.requireOfficialStore = patch.requireOfficialStore;

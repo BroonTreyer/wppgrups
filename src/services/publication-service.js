@@ -1,5 +1,5 @@
 import { discountPercentage, offerFingerprint, productKey, validateOffer } from "../domain/offer.js";
-import { inferNiches } from "../domain/niches.js";
+import { inferNiches, nicheIsTrusted } from "../domain/niches.js";
 import { effectiveInterval, isDeadHour } from "../domain/timing.js";
 import { formatOfferCaption } from "../domain/message.js";
 import { isAttributedLink } from "../domain/affiliate.js";
@@ -111,6 +111,13 @@ export class PublicationService {
   permanentBlockReason({ destination, offer, nicheIds }) {
     if (!Array.isArray(destination.nicheIds) || !destination.nicheIds.some((id) => nicheIds.includes(id))) {
       return `nicho nao combina (destino aceita ${(destination.nicheIds ?? []).join(", ")})`;
+    }
+    // O nicho pode ate combinar, mas de onde ele veio? Com a IA sem cota a regra de
+    // palavras chamou coletor de urina e touca de cozinha de beleza (14/09/2026).
+    // Onde o destino pede, so vale nicho da colheita, da IA ou da categoria do
+    // marketplace. Permanente: a fonte de uma oferta nao muda na fila.
+    if (destination.requireTrustedNiche && !destination.nicheIds.some((id) => nicheIds.includes(id) && nicheIsTrusted(offer, id))) {
+      return "nicho sem fonte confiavel (so colheita das lojas, IA ou categoria do marketplace)";
     }
     // Julgamento da IA sobre o publico, quando existe. Vem antes da lista de
     // palavras porque pega o que nenhuma palavra pega: "Kit Camisetas Aramis" nao
