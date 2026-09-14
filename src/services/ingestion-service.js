@@ -330,7 +330,12 @@ export class IngestionService {
       nicheSource: "colheita"
     }));
 
-    for (const offer of await this.select(candidatos, { ...settings, maxPerRun: limite }, stats)) {
+    // Colheita sem piso de vendas nem de avaliacao: sao lojas oficiais escolhidas a
+    // dedo, e o dono decidiu em 14/09/2026 que tudo o que ela colhe vai para o
+    // grupo. Esses dois pisos descartavam quase tudo ("pouca gente comprou") e o
+    // grupo secava. Ficam desconto, faixa de preco, link atribuido e repeticao.
+    const semPisos = { ...settings, maxPerRun: limite, minSold: 0, minSoldByNiche: {}, minRating: 0 };
+    for (const offer of await this.select(candidatos, semPisos, stats)) {
       try {
         const link = await this.affiliateLinkService.linkFor(offer);
         const resultado = await this.queueService.enqueue({

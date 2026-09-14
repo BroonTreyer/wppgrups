@@ -116,6 +116,13 @@ export class PublicationService {
     // palavras chamou coletor de urina e touca de cozinha de beleza (14/09/2026).
     // Onde o destino pede, so vale nicho da colheita, da IA ou da categoria do
     // marketplace. Permanente: a fonte de uma oferta nao muda na fila.
+    // Mais estreito que o nicho confiavel: so o que veio da colheita das lojas.
+    // Pedido do dono em 14/09/2026: "mandar somente as ofertas da colheita, nao
+    // mande ofertas que nao fazem parte" — nem a vitrine de beleza do marketplace.
+    // Itens da colheita anteriores ao `nicheSource` sao reconhecidos pela origem.
+    if (destination.requireHarvest && !(offer.nicheSource === "colheita" || offer.sourceContext?.origem === "extensao")) {
+      return "este canal so publica ofertas da colheita das lojas";
+    }
     if (destination.requireTrustedNiche && !destination.nicheIds.some((id) => nicheIds.includes(id) && nicheIsTrusted(offer, id))) {
       return "nicho sem fonte confiavel (so colheita das lojas, IA ou categoria do marketplace)";
     }

@@ -132,6 +132,16 @@ test("destino que exige nicho confiavel barra palpite de palavra e aceita colhei
   assert.equal(service.permanentBlockReason({ destination: semExigencia, offer: { ...OFFER, nicheSource: "regra" }, nicheIds: ["beauty"] }), null, "destino que nao pediu segue como antes");
 });
 
+test("destino so-colheita recusa ate a vitrine de beleza", () => {
+  const destino = destination("g5", ["beauty"], { requireHarvest: true, requireTrustedNiche: true });
+  const service = build({ destinations: [destino], publications: [], deliveryEvents: [], offers: [], queue: [] });
+  const motivo = (offer) => service.permanentBlockReason({ destination: destino, offer: { ...OFFER, ...offer }, nicheIds: ["beauty"] });
+
+  assert.match(String(motivo({ category: "Beleza e Cuidado Pessoal", nicheSource: "ia" })), /so publica ofertas da colheita/);
+  assert.equal(motivo({ nicheSource: "colheita" }), null);
+  assert.equal(motivo({ sourceContext: { origem: "extensao" } }), null, "colheita antiga continua valendo");
+});
+
 test("a madrugada nao publica; as 5h volta", async () => {
   const estado = { destinations: [destination("g", ["electronics"])], publications: [], deliveryEvents: [], offers: [], queue: [] };
   // 06:00 UTC = 03:00 em Brasilia. Foi 24h de 11/09 a 14/09/2026; o dono do canal

@@ -357,6 +357,24 @@ test("colheita das lojas de beleza entra como beleza, sem IA e sem regra de pala
   assert.equal(enqueued[0].nicheSource, "colheita");
 });
 
+test("colheita ignora piso de vendas e de avaliacao, mas mantem desconto", async () => {
+  const { service, enqueued, store, apply } = build({
+    offers: [],
+    settings: { enabled: true, minDiscount: 20, minSold: 150, minSoldByNiche: { beauty: 30 }, minRating: 4.5, maxPrice: 1000 }
+  });
+  await apply();
+  store.state.destinations.push({ id: "g5", active: true, nicheIds: ["beauty"], maxDailyPosts: 100, minMinutesBetweenPosts: 5 });
+  const r = await service.harvest({ produtos: [
+    { externalId: "MLB501", title: "Mascara Capilar Keune 200ml", currentPrice: 50, originalPrice: 100, soldCount: 3, rating: 3.9,
+      imageUrl: "https://cdn/a.jpg", productUrl: "https://www.mercadolivre.com.br/p/MLB501", officialStore: true },
+    { externalId: "MLB502", title: "Shampoo Sem Desconto", currentPrice: 99, originalPrice: 100,
+      imageUrl: "https://cdn/b.jpg", productUrl: "https://www.mercadolivre.com.br/p/MLB502" }
+  ] });
+  assert.equal(r.enqueued, 1, "vendeu pouco e tem nota baixa, mas veio de loja de beleza");
+  assert.equal(enqueued[0].externalId, "MLB501");
+  assert.equal(r.rejectedBy?.["desconto abaixo do minimo"], 1, "desconto continua valendo");
+});
+
 test("colheita vazia nao faz nada e nao quebra", async () => {
   const { service, apply } = build({ offers: [], settings: { enabled: true } });
   await apply();
