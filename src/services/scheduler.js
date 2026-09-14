@@ -1,4 +1,6 @@
-export function startScheduler({ queueService, ingestionService, retentionService, operationService, affiliateLinkService, memberTracker, dailyClosing, welcomeResponder, config, logger = console }) {
+export function startScheduler({ queueService, ingestionService, retentionService, operationService, affiliateLinkService, memberTracker, dailyClosing, welcomeResponder, connectionGuard, config, logger = console }) {
+  // Sem guarda (testes, dry-run antigo) tudo segue como antes.
+  const conectado = async () => !connectionGuard || await connectionGuard.isConnected();
   const timers = [];
   const every = (seconds, task) => {
     const timer = setInterval(task, seconds * 1000);
@@ -10,6 +12,7 @@ export function startScheduler({ queueService, ingestionService, retentionServic
 
   if (config.scheduler.enabled) every(config.scheduler.intervalSeconds, async () => {
     if (await paused()) return;
+    if (!(await conectado())) return;
     if (affiliateLinkService) {
       try {
         const { rescued } = await affiliateLinkService.rescueAwaitingLink();
@@ -53,6 +56,7 @@ export function startScheduler({ queueService, ingestionService, retentionServic
   let respondendo = false;
   if (welcomeResponder && config.welcome?.enabled) every(config.welcome.pollSeconds, async () => {
     if (respondendo) return;
+    if (!(await conectado())) return;
     respondendo = true;
     try {
       const result = await welcomeResponder.tick();
@@ -67,6 +71,9 @@ export function startScheduler({ queueService, ingestionService, retentionServic
   });
 
   if (dailyClosing && config.dailyClosing?.groups?.length) every(60, async () => {
+    // Desconectado nao conta tentativa: a janela de 45 min segue valendo e o
+    // fechamento sai assim que a sessao voltar dentro dela.
+    if (!(await conectado())) return;
     try {
       const result = await dailyClosing.tick();
       for (const item of result.results ?? []) {

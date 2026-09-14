@@ -26,6 +26,12 @@ export class ZApiClient {
     return body;
   }
 
+  // Estado da sessao do WhatsApp. Com a sessao caida o /send-* NAO falha: a Z-API
+  // enfileira e responde 200, e o bot contaria como publicado (14/09/2026).
+  getStatus() {
+    return this.request("/status", { method: "GET" });
+  }
+
   getGroups() {
     return this.request("/groups", { method: "GET" });
   }
