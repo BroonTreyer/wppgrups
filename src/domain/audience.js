@@ -148,7 +148,17 @@ const APARELHO_DE_CABELO = [
 
 export const ACHADINHOS_MUTED_KEYWORDS = [...PERFUME_ARABE, ...CALCADO_ESPORTIVO, ...APARELHO_DE_CABELO];
 
+// Marcas que o dono quer ver MAIS (20/09/2026: "Kerastase, medicube, redken, mais
+// desses aqui"). Ganham a vez na fila e podem voltar depois de 7 dias, em vez de 30
+// — com 30, o catalogo delas ja tinha saido inteiro e nao sobrava o que mandar.
+// A intercalacao de marca (`brandCooldownPosts`) continua valendo: mais delas, nao
+// um bloco delas. Ver `favoriteBrandBonus` e `republishCooldownDaysFor`.
+export const ACHADINHOS_FAVORITE_BRANDS = ["kerastase", "medicube", "redken"];
+export const ACHADINHOS_FAVORITE_BRAND_COOLDOWN_DAYS = 7;
+
 export const ACHADINHOS_PRESET = {
+  favoriteBrands: ACHADINHOS_FAVORITE_BRANDS,
+  favoriteBrandCooldownDays: ACHADINHOS_FAVORITE_BRAND_COOLDOWN_DAYS,
   requireAudienceFit: ACHADINHOS_REQUIRE_AUDIENCE_FIT,
   mutedKeywords: ACHADINHOS_MUTED_KEYWORDS,
   blockedKeywords: ACHADINHOS_BLOCKED_KEYWORDS,

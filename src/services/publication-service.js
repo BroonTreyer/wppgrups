@@ -3,7 +3,7 @@ import { inferNiches, nicheIsTrusted } from "../domain/niches.js";
 import { effectiveInterval, isDeadHour } from "../domain/timing.js";
 import { formatOfferCaption } from "../domain/message.js";
 import { isAttributedLink } from "../domain/affiliate.js";
-import { marcaDe } from "../domain/targeting.js";
+import { marcaDe, republishCooldownDaysFor } from "../domain/targeting.js";
 import { dailyCap } from "../domain/limits.js";
 
 const days = (value) => value * 24 * 60 * 60 * 1000;
@@ -243,7 +243,8 @@ export class PublicationService {
     }
 
     const key = productKey(offer);
-    const cooldown = days(this.config.limits.republishCooldownDays);
+    // Marca preferida do destino volta antes: ver `republishCooldownDaysFor`.
+    const cooldown = days(republishCooldownDaysFor(offer, destination, this.config.limits.republishCooldownDays));
     const publishedKey = (item) => item.productKey ?? item.offerFingerprint?.split(":").slice(0, 2).join(":");
     const dentroDoPrazo = (item) => now - new Date(item.createdAt) < cooldown;
     const repeated = destinationPosts.find((item) => publishedKey(item) === key && dentroDoPrazo(item));

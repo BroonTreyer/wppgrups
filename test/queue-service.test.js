@@ -351,3 +351,25 @@ test("produto nunca publicado entra normalmente", async () => {
   assert.notEqual(resultado.skipped, true);
   assert.equal(store.state.queue.length, 1);
 });
+
+// --- marca preferida volta antes ---------------------------------------------
+
+test("marca preferida do destino volta depois do prazo curto, nao do de 30 dias", async () => {
+  // Kerastase ja tinha saido inteira (75 produtos) e o prazo de 30 dias deixava a
+  // colheita descartar quase tudo dela. Para a marca preferida, 7 dias bastam.
+  const store = new MemoryStore([{ ...DESTINO, nicheIds: ["general"], favoriteBrands: ["kerastase"], favoriteBrandCooldownDays: 7 }]);
+  store.state.publications = publicacaoDe(10);
+  const service = new QueueService({
+    store,
+    config: { ...config, limits: { ...config.limits, republishCooldownDays: 30 } },
+    clock: () => new Date("2026-09-12T00:00:00Z"),
+    publicationService: publisher()
+  });
+  const kerastase = { ...SAMPLE_OFFER, title: "Kérastase Nutritive Bain Satin 250ml", nicheIds: ["general"] };
+  const resultado = await service.enqueue(kerastase);
+  assert.notEqual(resultado.skipped, true, "10 dias passa do prazo curto de 7");
+
+  // Outra marca, mesma publicacao de 10 dias atras: continua no prazo de 30.
+  const outra = await filaCom(publicacaoDe(10)).service.enqueue({ ...SAMPLE_OFFER, nicheIds: ["general"] });
+  assert.equal(outra.skipped, true);
+});

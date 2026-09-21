@@ -1,4 +1,4 @@
-import { DEFAULT_SWEET_SPOT, scoreOffer } from "./scoring.js";
+import { DEFAULT_SWEET_SPOT, matchesKeyword, scoreOffer } from "./scoring.js";
 
 /**
  * Score de uma oferta PARA UM DESTINO especifico.
@@ -20,6 +20,9 @@ const NICHE_BONUS_CAP = 16;
 // Alto o bastante para vencer diferencas normais de desconto e demanda: se so
 // desempatasse, a prioridade nao mudaria nada na pratica.
 const PRIORITY_BONUS = 40;
+// Menor que a prioridade de nicho e menor que a penalidade acumulada de marca
+// repetida (42): a marca preferida ganha a vez, mas nao ganha TODAS as vezes.
+const FAVORITE_BRAND_BONUS = 30;
 const RECENT_WINDOW = 5;
 const REPEATED_NICHE_PENALTY = 6;
 const REPEATED_NICHE_CAP = 18;
@@ -91,6 +94,38 @@ export function priorityBonus(offerNicheIds = [], destination = {}) {
 }
 
 /**
+ * Marcas que o dono quer ver MAIS no canal (`destination.favoriteBrands`).
+ *
+ * Pedido de 20/09/2026: "Kerastase, medicube, redken, mais desses aqui". Elas ja
+ * estavam na colheita; o que as segurava era o prazo de republicacao de 30 dias:
+ * o catalogo inteiro da Kerastase (75 produtos) ja tinha saido, e a colheita
+ * descartava quase tudo o que lia dela. Por isso sao duas alavancas, e uma sem a
+ * outra nao muda nada: o bonus faz a marca ganhar a vez na fila, e o prazo curto
+ * (`favoriteBrandCooldownDays`) faz existir produto dela para ganhar a vez.
+ *
+ * Casa pelo titulo OU pelo vendedor, com a mesma regra de palavra inteira do
+ * resto do sistema ("redken" nao casa pedaco de outra palavra).
+ */
+export function isFavoriteBrand(offer, destination = {}) {
+  const marcas = destination.favoriteBrands ?? [];
+  if (!marcas.length) return false;
+  const texto = normalize(`${offer?.title ?? ""} ${offer?.sellerName ?? ""}`);
+  const palavras = texto.split(/[^a-z0-9]+/).filter(Boolean);
+  return marcas.some((marca) => matchesKeyword(texto, palavras, marca));
+}
+
+export function favoriteBrandBonus(offer, destination = {}) {
+  return isFavoriteBrand(offer, destination) ? FAVORITE_BRAND_BONUS : 0;
+}
+
+/** Prazo de republicacao deste produto neste destino, em dias. */
+export function republishCooldownDaysFor(offer, destination = {}, padrao = 0) {
+  const curto = Number(destination.favoriteBrandCooldownDays);
+  if (Number.isFinite(curto) && curto >= 0 && isFavoriteBrand(offer, destination)) return Math.min(curto, padrao);
+  return padrao;
+}
+
+/**
  * Penalidade por parecer com o que este destino acabou de publicar.
  *
  * `recent` sao as ultimas publicacoes DESTE destino, mais novas primeiro, com
@@ -159,6 +194,7 @@ export function scoreForDestination(offer, destination, { nicheIds = [], recent 
   return base
     + nicheAffinity(nicheIds, destination)
     + priorityBonus(nicheIds, destination)
+    + favoriteBrandBonus(offer, destination)
     - repetitionPenalty(offer, nicheIds, recent);
 }
 
@@ -167,6 +203,7 @@ export function breakdownForDestination(offer, destination, { nicheIds = [], rec
     base: scoreOffer(offer, { sweetSpot: destinationSweetSpot(destination), riskyKeywords }),
     afinidade: nicheAffinity(nicheIds, destination),
     prioridade: priorityBonus(nicheIds, destination),
+    marcaPreferida: favoriteBrandBonus(offer, destination),
     repeticao: -repetitionPenalty(offer, nicheIds, recent),
     faixa: destinationSweetSpot(destination),
     total: scoreForDestination(offer, destination, { nicheIds, recent, riskyKeywords })

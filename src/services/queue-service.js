@@ -1,7 +1,7 @@
 import { minutesUntilExpiry, productKey, validateOffer } from "../domain/offer.js";
 import { inferNiches } from "../domain/niches.js";
 import { scoreOffer } from "../domain/scoring.js";
-import { scoreForDestination } from "../domain/targeting.js";
+import { republishCooldownDaysFor, scoreForDestination } from "../domain/targeting.js";
 
 export { scoreOffer };
 
@@ -197,12 +197,13 @@ export class QueueService {
     // Sem cooldown configurado a porta fica ABERTA de proposito, nunca aberta por
     // engano: `undefined * 86400000` daria NaN e desligaria a regra em silencio.
     const dias = Number(this.config.limits?.republishCooldownDays) || 0;
-    const limite = this.clock().getTime() - dias * 86_400_000;
+    // O prazo e POR DESTINO: marca preferida de um canal volta antes so nele.
+    const limiteDe = (destination) => this.clock().getTime() - republishCooldownDaysFor(offer, destination, dias) * 86_400_000;
     const jaSaiuAqui = (destination) => (state.publications ?? []).some((item) =>
       (item.destinationId ?? item.groupId) === destination.id
       && item.status === "sent"
       && (item.productKey ?? null) === key
-      && new Date(item.createdAt).getTime() >= limite);
+      && new Date(item.createdAt).getTime() >= limiteDe(destination));
     return state.destinations.find((destination) =>
       destination.active
       && destination.available !== false

@@ -153,3 +153,29 @@ test("sem vendedor nao ha penalidade de marca", () => {
   const semVendedor = { title: "Truss Equilibrium Shampoo", currentPrice: 30, originalPrice: 60, soldCount: 900, rating: 4.7 };
   assert.equal(repetitionPenalty(semVendedor, ["beauty"], recentes), 6, "so a penalidade de nicho");
 });
+
+test("marca preferida ganha a vez, mas a repeticao ainda a segura", async () => {
+  const { favoriteBrandBonus, isFavoriteBrand, republishCooldownDaysFor } = await import("../src/domain/targeting.js");
+  const destino = canal({ favoriteBrands: ["kerastase", "medicube", "redken"], favoriteBrandCooldownDays: 7 });
+  const kerastase = oferta({ title: "Kérastase Nutritive Bain Satin 250ml" });
+  const comum = oferta({ title: "Shampoo Pantene Restauração 400ml" });
+
+  assert.equal(isFavoriteBrand(kerastase, destino), true, "casa sem acento");
+  assert.equal(isFavoriteBrand(oferta({ title: "Kit Redken All Soft", sellerName: "" }), destino), true);
+  assert.equal(isFavoriteBrand(oferta({ title: "Mascara Capilar 300g", sellerName: "MEDICUBE" }), destino), true, "casa pelo vendedor");
+  assert.equal(isFavoriteBrand(comum, destino), false);
+  assert.equal(isFavoriteBrand(oferta({ title: "Redkenzinho Genérico" }), destino), false, "palavra inteira");
+
+  assert.ok(scoreForDestination(kerastase, destino) - scoreForDestination(kerastase, canal()) === favoriteBrandBonus(kerastase, destino));
+  assert.ok(favoriteBrandBonus(kerastase, destino) > 0);
+
+  assert.equal(republishCooldownDaysFor(kerastase, destino, 30), 7);
+  assert.equal(republishCooldownDaysFor(comum, destino, 30), 30);
+  assert.equal(republishCooldownDaysFor(kerastase, canal(), 30), 30, "sem preferencia, prazo normal");
+  assert.equal(republishCooldownDaysFor(kerastase, destino, 5), 5, "o prazo curto nunca alonga o geral");
+
+  // Tres Kerastase seguidas: a penalidade de marca repetida passa o bonus.
+  const recentes = Array.from({ length: 3 }, (_, i) => ({ title: `Kerastase Produto ${i}`, sellerName: "KERASTASE", nicheIds: [] }));
+  const kerastaseDaLoja = oferta({ title: "Kérastase Genesis Serum", sellerName: "KERASTASE" });
+  assert.ok(scoreForDestination(kerastaseDaLoja, destino, { recent: recentes }) < scoreForDestination(kerastaseDaLoja, canal()));
+});

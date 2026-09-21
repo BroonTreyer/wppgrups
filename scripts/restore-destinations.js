@@ -42,6 +42,7 @@ for (const destino of alvos) {
   const mudos = ACHADINHOS_PRESET.mutedKeywords.length - (destino.mutedKeywords ?? []).length;
   console.log(`   saturacao: ${(destino.mutedKeywords ?? []).length} palavras -> ${ACHADINHOS_PRESET.mutedKeywords.length} (${mudos >= 0 ? "+" : ""}${mudos})`);
   console.log(`   teto de preco: ${destino.maxPrice ?? "nenhum"} -> R$ ${ACHADINHOS_PRESET.maxPrice}`);
+  console.log(`   marcas preferidas: ${(destino.favoriteBrands ?? []).join(", ") || "nenhuma"} -> ${ACHADINHOS_PRESET.favoriteBrands.join(", ")} (voltam em ${ACHADINHOS_PRESET.favoriteBrandCooldownDays} dias)`);
 }
 
 if (!aplicar) {
@@ -62,7 +63,9 @@ await store.update((state) => {
       mutedKeywords: [...ACHADINHOS_PRESET.mutedKeywords],
       requireAnyByNiche: structuredClone(ACHADINHOS_PRESET.requireAnyByNiche),
       maxPrice: ACHADINHOS_PRESET.maxPrice,
-      requireAudienceFit: ACHADINHOS_PRESET.requireAudienceFit
+      requireAudienceFit: ACHADINHOS_PRESET.requireAudienceFit,
+      favoriteBrands: [...ACHADINHOS_PRESET.favoriteBrands],
+      favoriteBrandCooldownDays: ACHADINHOS_PRESET.favoriteBrandCooldownDays
     });
   }
 });
