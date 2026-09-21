@@ -256,3 +256,32 @@ test("sem a exigencia, vendedor comum continua passando", () => {
   });
   assert.equal(avaliar({ officialStore: false, sellerName: "LOJA DO JOAO" }), null);
 });
+
+test("pasta de dente, tinta de cabelo e Salon Line saem a pedido do dono", () => {
+  for (const titulo of [
+    "Creme Dental Colgate Total Fresh Mint 90g",
+    "Pasta de Dentes Colgate Total Original Mint 4x90g",
+    "Kit 3 Pasta De Dente Rapido Alivio Sensodyne 50g",
+    "Coloracao Permanente Koleston Deluxe 7/0 Louro Medio Sem Amonia",
+    "Tinta Para Cabelo Koleston Coloracao Creme 6646 Verm. Cereja",
+    "Tintura Para Cabelo Wella Soft Color 20 Preto Cobre",
+    "Gelatina #todecacho Super Definicao Salon Line 1 Kg",
+    "Shampoo S.o.s Bomba Original Crescimento Salonline 500ml"
+  ]) {
+    assert.match(String(motivo(titulo, ["beauty"])), /publico deste canal/, titulo);
+  }
+});
+
+test("o bloqueio do dono nao derruba skincare nem maquiagem parecidos", () => {
+  // "tonalizante" ficou fora da lista por causa destes: protetor solar com cor e
+  // o coracao do canal. "escova dental" e "clareamento" tambem continuam livres.
+  for (const titulo of [
+    "Protetor Solar Stick Tonalizante Fps 55 Ivory 17g Adcos",
+    "Filtro Solar Tonalizante Fps 55 Base Stick Adcos Bronze",
+    "Escova Dental Ultramacia Curaprox Trio 3 Unidades",
+    "Fitas Clareadoras Para Clareamento Dental 28 Unidades",
+    "Tinta Facial Cremosa Maquiagem Artistica Color Make 6 Cores"
+  ]) {
+    assert.equal(motivo(titulo, ["beauty"]), null, titulo);
+  }
+});

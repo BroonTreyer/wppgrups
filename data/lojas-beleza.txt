@@ -38,7 +38,6 @@ https://lista.mercadolivre.com.br/loja/lux/_Discount_5-100
 https://lista.mercadolivre.com.br/loja/rexona/_Discount_5-100
 https://lista.mercadolivre.com.br/loja/clear/_Discount_5-100
 https://lista.mercadolivre.com.br/loja/loreal-paris/_Discount_5-100
-https://lista.mercadolivre.com.br/loja/salon-line/_Discount_5-100
 https://lista.mercadolivre.com.br/loja/embelleze/_Discount_5-100
 https://lista.mercadolivre.com.br/loja/keune/_Discount_5-100
 https://lista.mercadolivre.com.br/loja/joico/_Discount_5-100
@@ -93,7 +92,6 @@ https://lista.mercadolivre.com.br/loja/lux
 https://lista.mercadolivre.com.br/loja/rexona
 https://lista.mercadolivre.com.br/loja/clear
 https://lista.mercadolivre.com.br/loja/loreal-paris
-https://lista.mercadolivre.com.br/loja/salon-line
 https://lista.mercadolivre.com.br/loja/embelleze
 https://lista.mercadolivre.com.br/loja/keune
 https://lista.mercadolivre.com.br/loja/joico

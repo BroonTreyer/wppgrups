@@ -75,7 +75,8 @@ export class DailyClosingService {
           // A enquete precisa chegar DEPOIS do texto que a apresenta.
           await this.pause(2000);
         }
-        if (!registro.steps.poll) {
+        // Sem enquete no dia (ela sai de tres em tres): so o texto fecha o dia.
+        if (poll && !registro.steps.poll) {
           await this.zapi.sendPoll({ destinationId: groupId, question: poll.question, options: poll.options, maxOptions: poll.options.length });
           registro.steps.poll = this.clock().toISOString();
         }

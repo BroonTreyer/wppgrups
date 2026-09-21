@@ -49,7 +49,30 @@ const PET = [
   "caixa de transporte", "pet shop"
 ];
 
+// Editorial do dono do canal (20/09/2026): "nao quero que mande pasta de dente,
+// nao quero tinta de cabelo". Nao e publico nem saturacao — e o que ele nao quer
+// no grupo, e isso basta.
+//
+// As listas foram conferidas contra os 13.448 titulos ja colhidos:
+// - "coloracao" aparece em 83 titulos unicos e TODOS sao tintura (inclusive tinta
+//   de cilios e sobrancelha, que e a mesma coisa). Por isso entra sozinha.
+// - "tonalizante" ficou DE FORA de proposito: 56 titulos, e boa parte e protetor
+//   solar com cor ("Protetor Solar Stick Tonalizante FPS 55"). Bloquear a palavra
+//   derrubaria skincare, que e justamente o que o canal mais quer.
+// - "tinta" solta tambem ficou de fora: pega "Tinta Facial Cremosa Maquiagem".
+//   A tinta de cabelo vem pelas frases e por "tintura"/"coloracao".
+// - "dental" solto derrubaria escova e clareamento; o pedido foi pasta de dente.
+const EDITORIAL_DO_DONO = [
+  "creme dental", "pasta de dente", "pasta dental",
+  "tinta de cabelo", "tinta para cabelo", "tintura", "coloracao",
+  // Marca inteira fora a pedido dele no mesmo dia. A loja tambem saiu da lista
+  // de colheita (data/lojas-beleza.txt) — aqui e a rede de seguranca para o que
+  // ja esta na fila e para a marca aparecendo em anuncio de revendedor.
+  "salon line", "salonline"
+];
+
 export const ACHADINHOS_BLOCKED_KEYWORDS = [
+  ...EDITORIAL_DO_DONO,
   ...GENERO_MASCULINO,
   ...BARBEARIA_E_SALAO,
   ...TERCEIRA_IDADE_E_ENFERMAGEM,

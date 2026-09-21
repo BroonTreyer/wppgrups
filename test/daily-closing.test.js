@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DailyClosingService } from "../src/services/daily-closing.js";
-import { CLOSING_MESSAGES, CLOSING_POLL, closingFor } from "../src/domain/closing.js";
+import { CLOSING_MESSAGES, CLOSING_MESSAGES_SEM_ENQUETE, CLOSING_POLL, closingFor } from "../src/domain/closing.js";
 
 class MemoryStore {
   constructor(state) { this.state = structuredClone(state); }
@@ -10,8 +10,10 @@ class MemoryStore {
 }
 
 const GROUP = "120363431078469154-group";
-// 22h05 em Sao Paulo = 01h05 UTC do dia seguinte.
-const AS_22H05 = "2026-09-15T01:05:00Z";
+// 22h05 em Sao Paulo = 01h05 UTC do dia seguinte. Esta data cai num DIA DE
+// ENQUETE (ela sai de tres em tres dias): os testes de texto+enquete so fazem
+// sentido num dia em que a enquete sai.
+const AS_22H05 = "2026-09-17T01:05:00Z";
 
 function setup({ now = AS_22H05, running = true, active = true, dryRun = false, zapi } = {}) {
   const store = new MemoryStore({ destinations: [{ id: GROUP, active }] });
@@ -42,11 +44,11 @@ test("as 22h manda o texto e depois a enquete, uma vez so", async () => {
 });
 
 test("antes das 22h e depois da tolerancia nao manda", async () => {
-  const antes = setup({ now: "2026-09-15T00:59:00Z" });
+  const antes = setup({ now: "2026-09-17T00:59:00Z" });
   await antes.service.tick();
   assert.equal(antes.sent.length, 0);
 
-  const tarde = setup({ now: "2026-09-15T01:50:00Z" });
+  const tarde = setup({ now: "2026-09-17T01:50:00Z" });
   await tarde.service.tick();
   assert.equal(tarde.sent.length, 0, "22h50 ja passou da tolerancia de 45 min");
 });
@@ -93,7 +95,7 @@ test("desiste depois de 3 falhas em vez de insistir a noite toda", async () => {
 test("no dia seguinte manda de novo", async () => {
   const { service, sent, clock } = setup();
   await service.tick();
-  clock.now = new Date("2026-09-16T01:05:00Z");
+  clock.now = new Date("2026-09-18T01:05:00Z");
   await service.tick();
   assert.equal(sent.filter((item) => item.type === "text").length, 2);
 });
@@ -111,4 +113,23 @@ test("a mensagem varia entre os dias e a enquete cabe no WhatsApp", () => {
   assert.ok(CLOSING_POLL.options.length >= 2 && CLOSING_POLL.options.length <= 12);
   assert.ok(CLOSING_POLL.options.every((opcao) => opcao.length <= 100));
   assert.ok(CLOSING_MESSAGES.every((texto) => texto.includes("5h")), "o texto promete a volta no horario real");
+});
+
+test("a enquete sai de tres em tres dias; nos outros vai so o texto", async () => {
+  const dias = ["2026-09-15", "2026-09-16", "2026-09-17", "2026-09-18", "2026-09-19", "2026-09-20"];
+  const comEnquete = dias.filter((dia) => closingFor(new Date(`${dia}T01:05:00Z`)).poll !== null);
+  assert.equal(comEnquete.length, 2, "duas enquetes em seis dias");
+
+  // O dia sem enquete manda o texto e NAO chama a Z-API de enquete.
+  const semEnquete = dias.find((dia) => closingFor(new Date(`${dia}T01:05:00Z`)).poll === null);
+  const { service, sent } = setup({ now: `${semEnquete}T01:05:00Z` });
+  const resultado = await service.tick();
+  assert.deepEqual(sent.map((item) => item.type), ["text"]);
+  assert.equal(resultado.results[0].sent, true, "o dia fecha mesmo sem enquete");
+});
+
+test("texto de dia sem enquete nao convida a votar", () => {
+  assert.ok(CLOSING_MESSAGES_SEM_ENQUETE.every((texto) => !/enquete|vota/i.test(texto)));
+  assert.ok(CLOSING_MESSAGES_SEM_ENQUETE.every((texto) => texto.includes("5h")));
+  assert.ok(CLOSING_MESSAGES.every((texto) => /enquete|vota/i.test(texto)), "dia de enquete chama para votar");
 });
