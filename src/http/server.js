@@ -25,7 +25,7 @@ function send(response, status, body) {
   response.end(JSON.stringify(body, null, 2));
 }
 
-export function createApp({ config, destinationService, publicationService, queueService, productLinkService, ingestionService, affiliateLinkService, operationService, memberTracker, dailyClosing, welcomeResponder }) {
+export function createApp({ config, destinationService, publicationService, queueService, productLinkService, ingestionService, affiliateLinkService, operationService, memberTracker, dailyClosing, welcomeResponder, conversaAudio }) {
   return createServer(async (request, response) => {
     const url = new URL(request.url, config.appBaseUrl);
     try {
@@ -41,6 +41,16 @@ export function createApp({ config, destinationService, publicationService, queu
         if (url.searchParams.get("secret") !== config.zapi.webhookSecret) return send(response, 401, { error: "Webhook nao autorizado" });
         await publicationService.recordDeliveryEvent(await jsonBody(request));
         return send(response, 202, { accepted: true });
+      }
+      // Mensagens recebidas no WhatsApp (conversa por audio). Unica rota exposta
+      // na internet (pelo Caddy); responde na hora e processa depois, porque a
+      // Z-API reenvia o que demora.
+      if (request.method === "POST" && url.pathname === "/webhooks/zapi/received") {
+        if (url.searchParams.get("secret") !== config.zapi.webhookSecret) return send(response, 401, { error: "Webhook nao autorizado" });
+        const evento = await jsonBody(request);
+        send(response, 200, { accepted: true });
+        conversaAudio?.receber(evento).catch((error) => console.error("Conversa por audio: falha ao registrar mensagem:", error.message));
+        return;
       }
       if (request.headers.authorization !== `Bearer ${config.adminToken}`) return send(response, 401, { error: "Nao autorizado" });
       if (request.method === "GET" && url.pathname === "/api/readiness") {
@@ -76,6 +86,10 @@ export function createApp({ config, destinationService, publicationService, queu
       if (request.method === "GET" && url.pathname === "/api/welcome") return send(response, 200, await welcomeResponder.status());
       if (request.method === "POST" && url.pathname === "/api/welcome/forget") return send(response, 200, await welcomeResponder.forget(await jsonBody(request)));
       if (request.method === "POST" && url.pathname === "/api/welcome/rebaseline") return send(response, 200, await welcomeResponder.rebaseline());
+      if (request.method === "GET" && url.pathname === "/api/conversas") return send(response, 200, await conversaAudio.status());
+      if (request.method === "POST" && url.pathname === "/api/conversas/esquecer") return send(response, 200, await conversaAudio.esquecer(await jsonBody(request)));
+      if (request.method === "POST" && url.pathname === "/api/conversas/humano") return send(response, 200, await conversaAudio.humano(await jsonBody(request)));
+      if (request.method === "POST" && url.pathname === "/api/conversas/simular") return send(response, 200, await conversaAudio.simular(await jsonBody(request)));
       if (request.method === "GET" && url.pathname === "/api/closing") return send(response, 200, await dailyClosing.status());
       if (request.method === "GET" && url.pathname === "/api/members") return send(response, 200, await memberTracker.status());
       if (request.method === "POST" && url.pathname === "/api/members/sync") return send(response, 200, await memberTracker.tick());

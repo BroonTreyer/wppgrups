@@ -49,8 +49,35 @@ export class ZApiClient {
     return this.request(`/chats?page=${page}&pageSize=${pageSize}`, { method: "GET" });
   }
 
-  sendText({ destinationId, message }) {
-    return this.request("/send-text", { method: "POST", body: JSON.stringify({ phone: destinationId, message }) });
+  // `typingSeconds` (1-15) mostra "digitando..." antes de entregar.
+  sendText({ destinationId, message, typingSeconds }) {
+    const extra = typingSeconds ? { delayTyping: Math.min(15, Math.max(1, Math.round(typingSeconds))) } : {};
+    return this.request("/send-text", { method: "POST", body: JSON.stringify({ phone: destinationId, message, ...extra }) });
+  }
+
+  // Audio como mensagem de VOZ (waveform), igual a um gravado na hora. `audio` e
+  // URL ou data URI base64. `delaySeconds` (1-15) e a espera antes da entrega,
+  // com "gravando audio..." na conversa.
+  sendAudio({ destinationId, audio, delaySeconds }) {
+    const extra = delaySeconds ? { delayMessage: Math.min(15, Math.max(1, Math.round(delaySeconds))) } : {};
+    return this.request("/send-audio", {
+      method: "POST",
+      body: JSON.stringify({ phone: destinationId, audio, waveform: true, viewOnce: false, ...extra })
+    });
+  }
+
+  // Para onde a Z-API entrega as mensagens RECEBIDAS (e, com notifySentByMe, as
+  // que o dono manda pelo celular — e assim que o robo sabe que ele assumiu).
+  setReceivedWebhook(url) {
+    return this.request("/update-webhook-received", { method: "PUT", body: JSON.stringify({ value: url }) });
+  }
+
+  setNotifySentByMe(enabled) {
+    return this.request("/update-notify-sent-by-me", { method: "PUT", body: JSON.stringify({ notifySentByMe: Boolean(enabled) }) });
+  }
+
+  getInstanceInfo() {
+    return this.request("/me", { method: "GET" });
   }
 
   // `pollMaxOptions` e quantas opcoes a pessoa pode marcar. Igual ao numero de

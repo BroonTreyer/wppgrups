@@ -122,6 +122,25 @@ export function loadConfig(env = process.env) {
         "É só tocar no link e depois em *Entrar no grupo* 😉"
       ].join("\n")
     },
+    // Conversa por audio (src/services/conversa-audio.js): quem chama no privado
+    // recebe audios gravados pelo dono, escolhidos pela IA conforme o que a
+    // pessoa escreveu. Nasce em ensaio, e AUDIO_FLOW_ONLY_PHONES restringe a
+    // numeros de teste enquanto nao estiver vazio.
+    audioFlow: {
+      enabled: bool(env.AUDIO_FLOW_ENABLED, false),
+      dryRun: bool(env.AUDIO_FLOW_DRY_RUN, true),
+      onlyPhones: (env.AUDIO_FLOW_ONLY_PHONES ?? "").split(",").map((item) => item.replace(/\D/g, "")).filter(Boolean),
+      apiKey: env.ANTHROPIC_API_KEY ?? "",
+      model: env.AUDIO_FLOW_MODEL ?? "claude-sonnet-5-5",
+      debounceSeconds: int(env.AUDIO_FLOW_DEBOUNCE_SECONDS, 20),
+      humanPauseHours: int(env.AUDIO_FLOW_HUMAN_PAUSE_HOURS, 24),
+      maxAudiosPerTurn: int(env.AUDIO_FLOW_MAX_AUDIOS_PER_TURN, 3),
+      maxTurnsPerDay: int(env.AUDIO_FLOW_MAX_TURNS_PER_DAY, 6),
+      alertPhone: (env.AUDIO_FLOW_ALERT_PHONE ?? "").replace(/\D/g, ""),
+      audiosDir: env.AUDIO_FLOW_DIR ?? new URL("../data/audios/", import.meta.url),
+      stateFile: env.AUDIO_FLOW_STATE_FILE ?? new URL("../data/conversas.json", import.meta.url),
+      inviteLink: `https://chat.whatsapp.com/${env.WELCOME_INVITE_CODE ?? "Cahbkfye2jg42cXIirHFeG"}`
+    },
     // Mensagem de "vitrine fechada" + enquete quando a janela fecha
     // (src/services/daily-closing.js). Sem grupos listados nada e enviado.
     dailyClosing: {
@@ -182,6 +201,9 @@ export function assertSafeConfig(config) {
   if (config.welcome.enabled && !/chat\.whatsapp\.com\/[A-Za-z0-9]+/.test(config.welcome.message)) {
     throw new Error("WELCOME_REPLY_MESSAGE precisa conter o link chat.whatsapp.com do grupo");
   }
+  if (config.audioFlow.enabled && !config.audioFlow.apiKey) throw new Error("Defina ANTHROPIC_API_KEY antes de ligar AUDIO_FLOW_ENABLED");
+  if (config.audioFlow.debounceSeconds < 5) throw new Error("AUDIO_FLOW_DEBOUNCE_SECONDS deve ser pelo menos 5");
+  if (config.audioFlow.maxAudiosPerTurn < 1 || config.audioFlow.maxAudiosPerTurn > 5) throw new Error("AUDIO_FLOW_MAX_AUDIOS_PER_TURN deve estar entre 1 e 5");
   if (config.meta.pollMinutes < 1) throw new Error("MEMBER_TRACKING_POLL_MINUTES deve ser pelo menos 1");
   if (config.meta.accessToken && !config.meta.pixelId) throw new Error("Defina META_PIXEL_ID junto com META_CAPI_TOKEN");
   if (!["low", "medium", "high", "xhigh", "max"].includes(config.ai.effort)) throw new Error("AI_CLASSIFIER_EFFORT deve ser low, medium, high, xhigh ou max");

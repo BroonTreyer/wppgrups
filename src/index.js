@@ -15,6 +15,7 @@ import { MercadoLivreSource } from "./sources/mercado-livre.js";
 import { MemberTracker } from "./services/member-tracker.js";
 import { DailyClosingService } from "./services/daily-closing.js";
 import { WelcomeResponder } from "./services/welcome-responder.js";
+import { ConversaAudio } from "./services/conversa-audio.js";
 import { ConnectionGuard } from "./services/connection-guard.js";
 import { MetaConversionsClient } from "./infra/meta-capi.js";
 import { startScheduler } from "./services/scheduler.js";
@@ -40,9 +41,11 @@ await operationService.restoreWindow();
 const memberTracker = new MemberTracker({ store, zapi, capi: new MetaConversionsClient(config.meta), config });
 const dailyClosing = new DailyClosingService({ store, zapi, operationService, config });
 const welcomeResponder = new WelcomeResponder({ store, zapi, config });
+// Estado proprio: o store.json tem megabytes e e regravado inteiro a cada escrita.
+const conversaAudio = new ConversaAudio({ store: new JsonStore(config.audioFlow.stateFile), mainStore: store, zapi, config });
 const connectionGuard = config.dryRun ? null : new ConnectionGuard({ zapi });
-const stopScheduler = startScheduler({ queueService, ingestionService, retentionService, operationService, affiliateLinkService, memberTracker, dailyClosing, welcomeResponder, connectionGuard, config });
-const server = createApp({ config, destinationService, publicationService, queueService, productLinkService, ingestionService, affiliateLinkService, operationService, memberTracker, dailyClosing, welcomeResponder });
+const stopScheduler = startScheduler({ queueService, ingestionService, retentionService, operationService, affiliateLinkService, memberTracker, dailyClosing, welcomeResponder, conversaAudio, connectionGuard, config });
+const server = createApp({ config, destinationService, publicationService, queueService, productLinkService, ingestionService, affiliateLinkService, operationService, memberTracker, dailyClosing, welcomeResponder, conversaAudio });
 
 server.listen(config.port, config.host, () => console.log(`OfertaFlow ativo em ${config.appBaseUrl} (${config.host}:${config.port}, dry-run: ${config.dryRun})`));
 for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => {

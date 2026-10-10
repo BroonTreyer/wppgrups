@@ -1,4 +1,4 @@
-export function startScheduler({ queueService, ingestionService, retentionService, operationService, affiliateLinkService, memberTracker, dailyClosing, welcomeResponder, connectionGuard, config, logger = console }) {
+export function startScheduler({ queueService, ingestionService, retentionService, operationService, affiliateLinkService, memberTracker, dailyClosing, welcomeResponder, conversaAudio, connectionGuard, config, logger = console }) {
   // Sem guarda (testes, dry-run antigo) tudo segue como antes.
   const conectado = async () => !connectionGuard || await connectionGuard.isConnected();
   const timers = [];
@@ -48,6 +48,24 @@ export function startScheduler({ queueService, ingestionService, retentionServic
       if (Object.values(pruned).some(Boolean)) logger.log("Limpeza do historico:", JSON.stringify(pruned));
     } catch (error) {
       logger.error("Falha na limpeza do historico:", error.message);
+    }
+  });
+
+  // Conversa por audio: fora do `paused()` (pausar os disparos nos grupos nao
+  // pode deixar quem chamou no privado sem resposta). A cada 5 s so le um
+  // arquivo pequeno; a IA so e chamada para quem parou de escrever.
+  let conversando = false;
+  if (conversaAudio && config.audioFlow?.enabled) every(5, async () => {
+    if (conversando) return;
+    conversando = true;
+    try {
+      if (!(await conectado())) return;
+      const { respondidos } = await conversaAudio.tick();
+      if (respondidos) logger.log(`Conversa por audio: ${respondidos} contato(s) respondido(s)`);
+    } catch (error) {
+      logger.error("Falha na conversa por audio:", error.message);
+    } finally {
+      conversando = false;
     }
   });
 
